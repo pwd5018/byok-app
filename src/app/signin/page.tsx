@@ -1,68 +1,73 @@
-"use client";
+import { signIn } from "@/auth";
+import { redirect } from "next/navigation";
 
-import { useState } from "react";
-import { signIn } from "next-auth/react";
-import { useRouter } from "next/navigation";
-
-export default function SigninPage() {
-    const router = useRouter();
-    const [email, setEmail] = useState("");
-    const [password, setPassword] = useState("");
-    const [message, setMessage] = useState("");
-    const [loading, setLoading] = useState(false);
-
-    async function handleSignin(e: React.FormEvent) {
-        e.preventDefault();
-        setLoading(true);
-        setMessage("");
-
-        const result = await signIn("credentials", {
-            email,
-            password,
-            redirect: false,
-        });
-
-        if (result?.error) {
-            setMessage("Invalid email or password");
-            setLoading(false);
-            return;
-        }
-
-        router.push("/");
-        router.refresh();
-    }
-
+export default function SignInPage() {
     return (
         <main className="min-h-screen flex items-center justify-center p-8">
-            <form onSubmit={handleSignin} className="w-full max-w-md space-y-4">
-                <h1 className="text-2xl font-bold">Sign in</h1>
+            <div className="w-full max-w-md rounded-2xl border p-6 shadow-sm">
+                <h1 className="text-2xl font-semibold mb-2">Sign in</h1>
+                <p className="text-sm text-muted-foreground mb-6">
+                    Enter your email and password to continue.
+                </p>
 
-                <input
-                    className="w-full rounded border px-3 py-2"
-                    type="email"
-                    placeholder="Email"
-                    value={email}
-                    onChange={(e) => setEmail(e.target.value)}
-                />
+                <form
+                    action={async (formData) => {
+                        "use server";
 
-                <input
-                    className="w-full rounded border px-3 py-2"
-                    type="password"
-                    placeholder="Password"
-                    value={password}
-                    onChange={(e) => setPassword(e.target.value)}
-                />
+                        const email = formData.get("email") as string;
+                        const password = formData.get("password") as string;
 
-                <button
-                    className="rounded bg-black px-4 py-2 text-white disabled:opacity-50"
-                    disabled={loading}
-                    type="submit"
+                        await signIn("credentials", {
+                            email,
+                            password,
+                            redirectTo: "/dashboard",
+                        });
+                    }}
+                    className="space-y-4"
                 >
-                    {loading ? "Signing in..." : "Sign in"}
-                </button>
+                    <div className="space-y-2">
+                        <label htmlFor="email" className="text-sm font-medium">
+                            Email
+                        </label>
+                        <input
+                            id="email"
+                            name="email"
+                            type="email"
+                            required
+                            className="w-full rounded-lg border px-3 py-2"
+                            placeholder="you@example.com"
+                        />
+                    </div>
 
-                {message ? <p className="text-sm text-red-600">{message}</p> : null}
-            </form>
+                    <div className="space-y-2">
+                        <label htmlFor="password" className="text-sm font-medium">
+                            Password
+                        </label>
+                        <input
+                            id="password"
+                            name="password"
+                            type="password"
+                            required
+                            className="w-full rounded-lg border px-3 py-2"
+                            placeholder="••••••••"
+                        />
+                    </div>
+
+                    <button
+                        type="submit"
+                        className="w-full rounded-lg border px-4 py-2 font-medium"
+                    >
+                        Sign in
+                    </button>
+                </form>
+
+                <p className="mt-4 text-sm">
+                    Don&apos;t have an account?{" "}
+                    <a href="/signup" className="underline">
+                        Create one
+                    </a>
+                </p>
+            </div>
         </main>
     );
 }
