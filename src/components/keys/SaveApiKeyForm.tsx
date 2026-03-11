@@ -44,29 +44,34 @@ export default function SaveApiKeyForm() {
 
     return (
         <form onSubmit={handleSubmit} className="space-y-4">
-            <div>
-                <label className="mb-2 block text-sm font-medium">
-                    Groq API key
-                </label>
+            <div className="space-y-2">
+                <label className="text-sm font-semibold text-slate-800">Groq API key</label>
                 <input
                     type="password"
                     value={apiKey}
                     onChange={(e) => setApiKey(e.target.value)}
                     placeholder="gsk_..."
-                    className="w-full rounded border px-3 py-2"
+                    className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-slate-900 outline-none transition focus:border-slate-400 focus:ring-4 focus:ring-amber-100"
                     required
                 />
             </div>
 
-            <button
-                type="submit"
-                disabled={loading}
-                className="rounded bg-black px-4 py-2 text-white disabled:opacity-50"
-            >
-                {loading ? "Saving..." : "Save or replace key"}
-            </button>
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                <p className="text-sm text-slate-600">We validate the key immediately before saving it to your account.</p>
+                <button
+                    type="submit"
+                    disabled={loading}
+                    className="rounded-full bg-slate-950 px-5 py-3 text-sm font-semibold text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                    {loading ? "Saving..." : "Save and verify"}
+                </button>
+            </div>
 
-            {message ? <p className="text-sm">{message}</p> : null}
+            {message ? (
+                <p className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700">
+                    {message}
+                </p>
+            ) : null}
         </form>
     );
 }

@@ -41,12 +41,12 @@ export default function VerifyApiKeyButton() {
                 type="button"
                 onClick={handleVerify}
                 disabled={loading}
-                className="rounded border px-4 py-2 disabled:opacity-50"
+                className="rounded-full border border-slate-300 bg-white/85 px-4 py-2.5 text-sm font-semibold text-slate-800 transition hover:border-slate-400 hover:bg-white disabled:cursor-not-allowed disabled:opacity-60"
             >
                 {loading ? "Verifying..." : "Verify saved key"}
             </button>
 
-            {message ? <p className="text-sm">{message}</p> : null}
+            {message ? <p className="text-sm text-slate-600">{message}</p> : null}
         </div>
     );
 }
