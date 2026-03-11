@@ -1,3 +1,4 @@
+import { Prisma } from "@prisma/client";
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
@@ -6,6 +7,13 @@ import { createGroqChatCompletion } from "@/lib/groq";
 
 const systemPrompt =
     "You are a helpful assistant inside a bring-your-own-key Groq app.";
+
+function isDatabaseAvailabilityError(error: unknown) {
+    return (
+        error instanceof Prisma.PrismaClientKnownRequestError &&
+        ["P1008", "P1011"].includes(error.code)
+    );
+}
 
 export async function POST(req: NextRequest) {
     try {
@@ -105,6 +113,15 @@ export async function POST(req: NextRequest) {
             usage: completion.usage ?? null,
         });
     } catch (error) {
+        if (isDatabaseAvailabilityError(error)) {
+            return NextResponse.json(
+                {
+                    error: "The database is temporarily unavailable, so we could not load your saved API key or store chat history.",
+                },
+                { status: 503 }
+            );
+        }
+
         const message =
             error instanceof Error ? error.message : "Failed to generate response";
 
