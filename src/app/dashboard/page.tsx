@@ -34,14 +34,25 @@ export default async function DashboardPage() {
         redirect("/signin");
     }
 
-    const existingKey = await prisma.apiKey.findUnique({
-        where: {
-            userId_provider: {
-                userId: session.user.id,
-                provider: "groq",
+    const [existingKey, chatHistory] = await Promise.all([
+        prisma.apiKey.findUnique({
+            where: {
+                userId_provider: {
+                    userId: session.user.id,
+                    provider: "groq",
+                },
             },
-        },
-    });
+        }),
+        prisma.chatMessage.findMany({
+            where: {
+                userId: session.user.id,
+            },
+            orderBy: {
+                createdAt: "asc",
+            },
+            take: 20,
+        }),
+    ]);
 
     return (
         <main className="app-shell min-h-screen px-6 py-8 sm:px-8 lg:px-10">
@@ -164,7 +175,7 @@ export default async function DashboardPage() {
                     </aside>
                 </section>
 
-                {existingKey ? <ChatForm /> : null}
+                {existingKey ? <ChatForm history={chatHistory} /> : null}
             </div>
         </main>
     );

@@ -11,7 +11,15 @@ if (!connectionString) {
     throw new Error("Missing DATABASE_URL");
 }
 
-const pool = new pg.Pool({ connectionString });
+const hostname = new URL(connectionString).hostname;
+const useSsl = hostname !== "localhost" && hostname !== "127.0.0.1";
+
+const pool = new pg.Pool({
+    connectionString,
+    connectionTimeoutMillis: 5000,
+    ssl: useSsl ? { rejectUnauthorized: false } : undefined,
+});
+
 const adapter = new PrismaPg(pool);
 
 export const prisma =

@@ -4,6 +4,9 @@ import { prisma } from "@/lib/prisma";
 import { decryptApiKey } from "@/lib/crypto";
 import { createGroqChatCompletion } from "@/lib/groq";
 
+const systemPrompt =
+    "You are a helpful assistant inside a bring-your-own-key Groq app.";
+
 export async function POST(req: NextRequest) {
     try {
         const session = await auth();
@@ -13,7 +16,6 @@ export async function POST(req: NextRequest) {
         }
 
         const body = await req.json();
-
         const prompt =
             typeof body.prompt === "string" ? body.prompt.trim() : "";
 
@@ -51,8 +53,7 @@ export async function POST(req: NextRequest) {
             messages: [
                 {
                     role: "system",
-                    content:
-                        "You are a helpful assistant inside a bring-your-own-key Groq app.",
+                    content: systemPrompt,
                 },
                 {
                     role: "user",
@@ -61,8 +62,7 @@ export async function POST(req: NextRequest) {
             ],
         });
 
-        const content =
-            completion?.choices?.[0]?.message?.content;
+        const content = completion?.choices?.[0]?.message?.content;
 
         if (typeof content !== "string") {
             return NextResponse.json(
@@ -71,14 +71,33 @@ export async function POST(req: NextRequest) {
             );
         }
 
-        await prisma.apiKey.update({
-            where: { id: apiKeyRecord.id },
-            data: {
-                lastUsedAt: new Date(),
-                status: "valid",
-                verificationError: null,
-            },
-        });
+        const now = new Date();
+
+        await prisma.$transaction([
+            prisma.apiKey.update({
+                where: { id: apiKeyRecord.id },
+                data: {
+                    lastUsedAt: now,
+                    status: "valid",
+                    verificationError: null,
+                },
+            }),
+            prisma.chatMessage.create({
+                data: {
+                    userId: session.user.id,
+                    role: "user",
+                    content: prompt,
+                },
+            }),
+            prisma.chatMessage.create({
+                data: {
+                    userId: session.user.id,
+                    role: "assistant",
+                    content,
+                    model: typeof completion.model === "string" ? completion.model : null,
+                },
+            }),
+        ]);
 
         return NextResponse.json({
             output: content,

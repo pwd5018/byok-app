@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { signIn } from "@/auth";
+import SignInForm from "@/components/auth/SignInForm";
 
 export default function SignInPage() {
     return (
@@ -46,56 +46,7 @@ export default function SignInPage() {
                         </p>
                     </div>
 
-                    <form
-                        action={async (formData) => {
-                            "use server";
-
-                            const email = formData.get("email") as string;
-                            const password = formData.get("password") as string;
-
-                            await signIn("credentials", {
-                                email,
-                                password,
-                                redirectTo: "/dashboard",
-                            });
-                        }}
-                        className="mt-8 space-y-5"
-                    >
-                        <div className="space-y-2">
-                            <label htmlFor="email" className="text-sm font-semibold text-slate-800">
-                                Email
-                            </label>
-                            <input
-                                id="email"
-                                name="email"
-                                type="email"
-                                required
-                                className="w-full rounded-2xl border border-slate-200 bg-white/85 px-4 py-3 text-slate-900 outline-none transition focus:border-slate-400 focus:bg-white focus:ring-4 focus:ring-amber-100"
-                                placeholder="you@example.com"
-                            />
-                        </div>
-
-                        <div className="space-y-2">
-                            <label htmlFor="password" className="text-sm font-semibold text-slate-800">
-                                Password
-                            </label>
-                            <input
-                                id="password"
-                                name="password"
-                                type="password"
-                                required
-                                className="w-full rounded-2xl border border-slate-200 bg-white/85 px-4 py-3 text-slate-900 outline-none transition focus:border-slate-400 focus:bg-white focus:ring-4 focus:ring-amber-100"
-                                placeholder="Enter your password"
-                            />
-                        </div>
-
-                        <button
-                            type="submit"
-                            className="w-full rounded-2xl bg-slate-950 px-4 py-3 font-semibold text-white transition hover:bg-slate-800 focus:outline-none focus:ring-4 focus:ring-slate-300"
-                        >
-                            Enter dashboard
-                        </button>
-                    </form>
+                    <SignInForm />
 
                     <div className="mt-6 rounded-2xl border border-slate-200/80 bg-white/70 p-4 text-sm text-slate-600">
                         New here?{" "}

@@ -1,5 +1,6 @@
 "use client";
 
+import { useRouter } from "next/navigation";
 import { useState } from "react";
 
 type ChatResult = {
@@ -13,7 +14,27 @@ type ChatResult = {
     error?: string;
 };
 
-export default function ChatForm() {
+type ChatHistoryItem = {
+    id: string;
+    role: string;
+    content: string;
+    model: string | null;
+    createdAt: Date;
+};
+
+type ChatFormProps = {
+    history: ChatHistoryItem[];
+};
+
+function formatTimestamp(value: Date) {
+    return new Intl.DateTimeFormat("en-US", {
+        dateStyle: "medium",
+        timeStyle: "short",
+    }).format(new Date(value));
+}
+
+export default function ChatForm({ history }: ChatFormProps) {
+    const router = useRouter();
     const [prompt, setPrompt] = useState("");
     const [result, setResult] = useState<ChatResult | null>(null);
     const [loading, setLoading] = useState(false);
@@ -43,7 +64,9 @@ export default function ChatForm() {
             }
 
             setResult(data);
+            setPrompt("");
             setLoading(false);
+            router.refresh();
         } catch {
             setResult({
                 error: "Network error while calling /api/chat",
@@ -116,6 +139,61 @@ export default function ChatForm() {
                     </div>
                 </div>
             ) : null}
+
+            <div className="mt-8 space-y-4">
+                <div className="flex items-center justify-between gap-3">
+                    <div>
+                        <p className="eyebrow">Recent conversation</p>
+                        <h3 className="display-font text-xl font-semibold text-slate-950">Chat history</h3>
+                    </div>
+                    <div className="rounded-2xl border border-slate-200/80 bg-white/70 px-4 py-2 text-sm text-slate-600">
+                        {history.length} message{history.length === 1 ? "" : "s"}
+                    </div>
+                </div>
+
+                {history.length ? (
+                    <div className="space-y-3">
+                        {history.map((message) => {
+                            const isUser = message.role === "user";
+
+                            return (
+                                <article
+                                    key={message.id}
+                                    className={`rounded-[24px] border px-5 py-4 ${
+                                        isUser
+                                            ? "border-amber-200 bg-amber-50/85"
+                                            : "border-slate-200 bg-white/85"
+                                    }`}
+                                >
+                                    <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                                        <div className="flex items-center gap-2">
+                                            <span className={`inline-flex rounded-full px-3 py-1 text-xs font-semibold uppercase tracking-[0.14em] ${
+                                                isUser
+                                                    ? "bg-amber-100 text-amber-800"
+                                                    : "bg-slate-100 text-slate-700"
+                                            }`}>
+                                                {message.role}
+                                            </span>
+                                            {message.model ? (
+                                                <span className="text-xs text-slate-500">{message.model}</span>
+                                            ) : null}
+                                        </div>
+                                        <span className="text-xs text-slate-500">{formatTimestamp(message.createdAt)}</span>
+                                    </div>
+
+                                    <p className="mt-3 whitespace-pre-wrap text-sm leading-7 text-slate-800">
+                                        {message.content}
+                                    </p>
+                                </article>
+                            );
+                        })}
+                    </div>
+                ) : (
+                    <div className="rounded-[24px] border border-dashed border-slate-300 bg-white/60 px-5 py-6 text-sm text-slate-600">
+                        No chat history yet. Send your first prompt to start building the conversation log.
+                    </div>
+                )}
+            </div>
         </section>
     );
 }
