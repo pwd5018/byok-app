@@ -4,6 +4,7 @@ import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
 import { decryptApiKey } from "@/lib/crypto";
 import { createGroqChatCompletion } from "@/lib/groq";
+import { DEFAULT_CHAT_MODEL, DEFAULT_CHAT_PROVIDER, findGroqChatModel } from "@/lib/modelCatalog";
 
 const systemPrompt =
     "You are a helpful assistant inside a bring-your-own-key Groq app.";
@@ -26,6 +27,10 @@ export async function POST(req: NextRequest) {
         const body = await req.json();
         const prompt =
             typeof body.prompt === "string" ? body.prompt.trim() : "";
+        const provider =
+            typeof body.provider === "string" ? body.provider : DEFAULT_CHAT_PROVIDER;
+        const model =
+            typeof body.model === "string" ? body.model : DEFAULT_CHAT_MODEL;
 
         if (!prompt) {
             return NextResponse.json(
@@ -34,11 +39,26 @@ export async function POST(req: NextRequest) {
             );
         }
 
+        if (provider !== "groq") {
+            return NextResponse.json(
+                { error: "Unsupported provider" },
+                { status: 400 }
+            );
+        }
+
+        const selectedModel = findGroqChatModel(model);
+        if (!selectedModel) {
+            return NextResponse.json(
+                { error: "Unsupported model" },
+                { status: 400 }
+            );
+        }
+
         const apiKeyRecord = await prisma.apiKey.findUnique({
             where: {
                 userId_provider: {
                     userId: session.user.id,
-                    provider: "groq",
+                    provider,
                 },
             },
         });
@@ -58,6 +78,7 @@ export async function POST(req: NextRequest) {
 
         const completion = await createGroqChatCompletion({
             apiKey: groqApiKey,
+            model: selectedModel.id,
             messages: [
                 {
                     role: "system",
@@ -80,6 +101,8 @@ export async function POST(req: NextRequest) {
         }
 
         const now = new Date();
+        const completionModel =
+            typeof completion.model === "string" ? completion.model : selectedModel.id;
 
         await prisma.$transaction([
             prisma.apiKey.update({
@@ -102,14 +125,14 @@ export async function POST(req: NextRequest) {
                     userId: session.user.id,
                     role: "assistant",
                     content,
-                    model: typeof completion.model === "string" ? completion.model : null,
+                    model: completionModel,
                 },
             }),
         ]);
 
         return NextResponse.json({
             output: content,
-            model: completion.model,
+            model: completionModel,
             usage: completion.usage ?? null,
         });
     } catch (error) {

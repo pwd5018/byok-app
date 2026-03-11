@@ -3,6 +3,12 @@
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 import MarkdownMessage from "@/components/chat/MarkdownMessage";
+import {
+    DEFAULT_CHAT_MODEL,
+    DEFAULT_CHAT_PROVIDER,
+    GROQ_CHAT_MODELS,
+    type SupportedProvider,
+} from "@/lib/modelCatalog";
 
 type ChatResult = {
     output?: string;
@@ -40,11 +46,20 @@ function getRoleLabel(role: string) {
     return role;
 }
 
+function getModelLabel(modelId: string | null) {
+    if (!modelId) return null;
+    return GROQ_CHAT_MODELS.find((model) => model.id === modelId)?.label ?? modelId;
+}
+
 export default function ChatForm({ history }: ChatFormProps) {
     const router = useRouter();
+    const [provider, setProvider] = useState<SupportedProvider>(DEFAULT_CHAT_PROVIDER);
+    const [model, setModel] = useState(DEFAULT_CHAT_MODEL);
     const [prompt, setPrompt] = useState("");
     const [result, setResult] = useState<ChatResult | null>(null);
     const [loading, setLoading] = useState(false);
+
+    const selectedModel = GROQ_CHAT_MODELS.find((option) => option.id === model) ?? GROQ_CHAT_MODELS[0];
 
     async function handleSubmit(e: React.FormEvent) {
         e.preventDefault();
@@ -57,7 +72,7 @@ export default function ChatForm({ history }: ChatFormProps) {
                 headers: {
                     "Content-Type": "application/json",
                 },
-                body: JSON.stringify({ prompt }),
+                body: JSON.stringify({ prompt, provider, model }),
             });
 
             const data = await res.json();
@@ -89,7 +104,7 @@ export default function ChatForm({ history }: ChatFormProps) {
                     <p className="eyebrow">Prompt playground</p>
                     <h2 className="display-font text-2xl font-semibold text-slate-950">Try Groq with your saved key</h2>
                     <p className="mt-2 text-sm leading-6 text-slate-600">
-                        Send a prompt through the app using the encrypted key already attached to your account.
+                        Choose a provider and model, then send a prompt using the encrypted key already attached to your account.
                     </p>
                 </div>
                 <div className="rounded-2xl border border-slate-200/80 bg-white/70 px-4 py-3 text-sm text-slate-600">
@@ -111,6 +126,70 @@ export default function ChatForm({ history }: ChatFormProps) {
                                 </div>
                                 <div className="rounded-full border border-amber-200 bg-amber-50 px-3 py-1 text-xs font-semibold text-amber-800">
                                     {loading ? "Working..." : "Ready"}
+                                </div>
+                            </div>
+
+                            <div className="grid gap-4 lg:grid-cols-[0.7fr_1.3fr]">
+                                <div className="space-y-2">
+                                    <label htmlFor="provider" className="text-sm font-semibold text-slate-800">
+                                        Provider
+                                    </label>
+                                    <select
+                                        id="provider"
+                                        value={provider}
+                                        onChange={(e) => setProvider(e.target.value as SupportedProvider)}
+                                        className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-slate-900 outline-none transition focus:border-slate-400 focus:ring-4 focus:ring-amber-100"
+                                    >
+                                        <option value="groq">Groq</option>
+                                    </select>
+                                </div>
+
+                                <div className="space-y-2">
+                                    <label htmlFor="model" className="text-sm font-semibold text-slate-800">
+                                        Model
+                                    </label>
+                                    <select
+                                        id="model"
+                                        value={model}
+                                        onChange={(e) => setModel(e.target.value)}
+                                        className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-slate-900 outline-none transition focus:border-slate-400 focus:ring-4 focus:ring-amber-100"
+                                    >
+                                        {GROQ_CHAT_MODELS.map((option) => (
+                                            <option key={option.id} value={option.id}>
+                                                {option.label} - {option.availability === "free" ? "Free" : "Paid"}
+                                            </option>
+                                        ))}
+                                    </select>
+                                </div>
+                            </div>
+
+                            <div className="rounded-[24px] border border-slate-200/80 bg-[linear-gradient(180deg,rgba(255,255,255,0.9),rgba(249,244,236,0.95))] p-4">
+                                <div className="flex flex-wrap items-center gap-2">
+                                    <span className="rounded-full bg-slate-950 px-3 py-1 text-xs font-semibold uppercase tracking-[0.14em] text-white">
+                                        {selectedModel.label}
+                                    </span>
+                                    <span className={`rounded-full px-3 py-1 text-xs font-semibold ${
+                                        selectedModel.availability === "free"
+                                            ? "bg-emerald-100 text-emerald-800"
+                                            : "bg-amber-100 text-amber-800"
+                                    }`}>
+                                        {selectedModel.availability === "free" ? "Free plan" : "Paid"}
+                                    </span>
+                                    <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-700">
+                                        {selectedModel.stage === "production" ? "Production" : "Preview"}
+                                    </span>
+                                    <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-700">
+                                        {selectedModel.contextWindow} context
+                                    </span>
+                                </div>
+
+                                <div className="mt-3 grid gap-3 sm:grid-cols-2">
+                                    <div className="rounded-2xl bg-white/80 px-4 py-3 text-sm text-slate-600">
+                                        <span className="font-semibold text-slate-900">Input:</span> {selectedModel.inputPrice}
+                                    </div>
+                                    <div className="rounded-2xl bg-white/80 px-4 py-3 text-sm text-slate-600">
+                                        <span className="font-semibold text-slate-900">Output:</span> {selectedModel.outputPrice}
+                                    </div>
                                 </div>
                             </div>
 
@@ -153,7 +232,7 @@ export default function ChatForm({ history }: ChatFormProps) {
                                     <h3 className="display-font mt-1 text-xl font-semibold text-slate-950">Fresh response</h3>
                                 </div>
                                 <div className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-xs text-slate-600">
-                                    {result.model || "Unknown model"}
+                                    {getModelLabel(result.model) || "Unknown model"}
                                 </div>
                             </div>
 
@@ -164,7 +243,7 @@ export default function ChatForm({ history }: ChatFormProps) {
                             <div className="mt-4 grid gap-3 sm:grid-cols-3">
                                 <div className="section-card p-4">
                                     <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Model</p>
-                                    <p className="mt-2 text-sm font-medium text-slate-900">{result.model || "Unknown"}</p>
+                                    <p className="mt-2 text-sm font-medium text-slate-900">{getModelLabel(result.model) || "Unknown"}</p>
                                 </div>
                                 <div className="section-card p-4">
                                     <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Total tokens</p>
@@ -216,7 +295,7 @@ export default function ChatForm({ history }: ChatFormProps) {
                                                     {getRoleLabel(message.role)}
                                                 </span>
                                                 {message.model ? (
-                                                    <span className="text-xs text-slate-500">{message.model}</span>
+                                                    <span className="text-xs text-slate-500">{getModelLabel(message.model) || message.model}</span>
                                                 ) : null}
                                             </div>
                                             <span className="text-xs text-slate-500">{formatTimestamp(message.createdAt)}</span>
