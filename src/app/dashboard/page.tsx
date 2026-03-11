@@ -34,25 +34,40 @@ export default async function DashboardPage() {
         redirect("/signin");
     }
 
-    const [existingKey, chatHistory] = await Promise.all([
-        prisma.apiKey.findUnique({
-            where: {
-                userId_provider: {
-                    userId: session.user.id,
-                    provider: "groq",
+    let existingKey = null;
+    let chatHistory: {
+        id: string;
+        role: string;
+        content: string;
+        model: string | null;
+        createdAt: Date;
+    }[] = [];
+    let databaseError = false;
+
+    try {
+        [existingKey, chatHistory] = await Promise.all([
+            prisma.apiKey.findUnique({
+                where: {
+                    userId_provider: {
+                        userId: session.user.id,
+                        provider: "groq",
+                    },
                 },
-            },
-        }),
-        prisma.chatMessage.findMany({
-            where: {
-                userId: session.user.id,
-            },
-            orderBy: {
-                createdAt: "asc",
-            },
-            take: 20,
-        }),
-    ]);
+            }),
+            prisma.chatMessage.findMany({
+                where: {
+                    userId: session.user.id,
+                },
+                orderBy: {
+                    createdAt: "asc",
+                },
+                take: 20,
+            }),
+        ]);
+    } catch (error) {
+        databaseError = true;
+        console.error("Dashboard database load failed:", error);
+    }
 
     return (
         <main className="app-shell min-h-screen px-6 py-8 sm:px-8 lg:px-10">
@@ -83,6 +98,16 @@ export default async function DashboardPage() {
                         </div>
                     </div>
                 </section>
+
+                {databaseError ? (
+                    <section className="glass-panel rounded-[30px] border border-rose-200 bg-rose-50/80 p-6 sm:p-7 text-rose-800">
+                        <p className="eyebrow text-rose-600">Database issue</p>
+                        <h2 className="display-font mt-2 text-2xl font-semibold text-rose-900">The dashboard could not reach PostgreSQL</h2>
+                        <p className="mt-3 max-w-3xl text-sm leading-7">
+                            Your session is active, but the app timed out while loading your saved API key and chat history. The remaining issue is the database connection path rather than the dashboard UI.
+                        </p>
+                    </section>
+                ) : null}
 
                 <section className="grid gap-6 lg:grid-cols-[1.05fr_0.95fr]">
                     <div className="glass-panel rounded-[30px] p-6 sm:p-7">

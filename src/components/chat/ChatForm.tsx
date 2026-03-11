@@ -2,6 +2,7 @@
 
 import { useRouter } from "next/navigation";
 import { useState } from "react";
+import MarkdownMessage from "@/components/chat/MarkdownMessage";
 
 type ChatResult = {
     output?: string;
@@ -156,8 +157,8 @@ export default function ChatForm({ history }: ChatFormProps) {
                                 </div>
                             </div>
 
-                            <div className="mt-4 rounded-[24px] border border-slate-200 bg-[linear-gradient(180deg,rgba(255,255,255,0.95),rgba(248,244,237,0.95))] p-5 text-[15px] leading-7 whitespace-pre-wrap text-slate-800">
-                                {result.output}
+                            <div className="mt-4 rounded-[24px] border border-slate-200 bg-[linear-gradient(180deg,rgba(255,255,255,0.95),rgba(248,244,237,0.95))] p-5 text-[15px] text-slate-800">
+                                <MarkdownMessage content={result.output} />
                             </div>
 
                             <div className="mt-4 grid gap-3 sm:grid-cols-3">
@@ -221,9 +222,15 @@ export default function ChatForm({ history }: ChatFormProps) {
                                             <span className="text-xs text-slate-500">{formatTimestamp(message.createdAt)}</span>
                                         </div>
 
-                                        <p className="mt-3 whitespace-pre-wrap text-sm leading-7 text-slate-800">
-                                            {message.content}
-                                        </p>
+                                        {isUser ? (
+                                            <p className="mt-3 whitespace-pre-wrap text-sm leading-7 text-slate-800">
+                                                {message.content}
+                                            </p>
+                                        ) : (
+                                            <div className="mt-3 text-sm text-slate-800">
+                                                <MarkdownMessage content={message.content} />
+                                            </div>
+                                        )}
                                     </article>
                                 );
                             })
