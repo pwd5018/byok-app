@@ -1,0 +1,35 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+model User {
+  id           String   @id @default(cuid())
+  email        String   @unique
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+  passwordHash String
+  apiKeys      ApiKey[]
+}
+
+model ApiKey {
+  id                String    @id @default(cuid())
+  userId            String
+  provider          String
+  encryptedKey      String
+  keyIv             String
+  keyTag            String
+  maskedKey         String
+  status            String
+  lastVerifiedAt    DateTime?
+  lastUsedAt        DateTime?
+  verificationError String?
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+  user              User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, provider])
+}
