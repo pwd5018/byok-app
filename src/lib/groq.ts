@@ -2,6 +2,30 @@ type GroqValidationResult =
     | { ok: true }
     | { ok: false; error: string };
 
+type GroqModelListResponse = {
+    data?: Array<{
+        id?: string;
+    }>;
+};
+
+async function parseGroqError(res: Response) {
+    let errorMessage = `Groq returned ${res.status}`;
+
+    try {
+        const data = await res.json();
+
+        if (typeof data?.error?.message === "string") {
+            errorMessage = data.error.message;
+        } else if (typeof data?.message === "string") {
+            errorMessage = data.message;
+        }
+    } catch {
+        // ignore JSON parse errors
+    }
+
+    return errorMessage;
+}
+
 export async function validateGroqApiKey(
     apiKey: string
 ): Promise<GroqValidationResult> {
@@ -19,21 +43,7 @@ export async function validateGroqApiKey(
             return { ok: true };
         }
 
-        let errorMessage = `Groq returned ${res.status}`;
-
-        try {
-            const data = await res.json();
-
-            if (typeof data?.error?.message === "string") {
-                errorMessage = data.error.message;
-            } else if (typeof data?.message === "string") {
-                errorMessage = data.message;
-            }
-        } catch {
-            // ignore JSON parse errors
-        }
-
-        return { ok: false, error: errorMessage };
+        return { ok: false, error: await parseGroqError(res) };
     } catch (error) {
         return {
             ok: false,
@@ -41,6 +51,30 @@ export async function validateGroqApiKey(
                 error instanceof Error ? error.message : "Failed to reach Groq",
         };
     }
+}
+
+export async function listGroqModels(apiKey: string) {
+    const res = await fetch("https://api.groq.com/openai/v1/models", {
+        method: "GET",
+        headers: {
+            Authorization: `Bearer ${apiKey}`,
+            "Content-Type": "application/json",
+        },
+        cache: "no-store",
+    });
+
+    if (!res.ok) {
+        throw new Error(await parseGroqError(res));
+    }
+
+    const data = (await res.json().catch(() => null)) as GroqModelListResponse | null;
+    const models = Array.isArray(data?.data)
+        ? data.data
+            .map((entry) => (typeof entry?.id === "string" ? entry.id : null))
+            .filter((value): value is string => Boolean(value))
+        : [];
+
+    return models;
 }
 
 export type ChatMessage = {

@@ -1,12 +1,15 @@
 "use client";
 
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { useState } from "react";
 import MarkdownMessage from "@/components/chat/MarkdownMessage";
 import {
     DEFAULT_CHAT_MODEL,
     DEFAULT_CHAT_PROVIDER,
     GROQ_CHAT_MODELS,
+    getModelLabel,
+    mergeGroqModels,
+    type LiveGroqModel,
     type SupportedProvider,
 } from "@/lib/modelCatalog";
 
@@ -33,6 +36,13 @@ type ChatFormProps = {
     history: ChatHistoryItem[];
 };
 
+type ModelResponse = {
+    models?: LiveGroqModel[];
+    error?: string;
+};
+
+const catalogFallback = mergeGroqModels(GROQ_CHAT_MODELS.map((model) => model.id));
+
 function formatTimestamp(value: Date) {
     return new Intl.DateTimeFormat("en-US", {
         dateStyle: "medium",
@@ -46,20 +56,56 @@ function getRoleLabel(role: string) {
     return role;
 }
 
-function getModelLabel(modelId: string | null) {
-    if (!modelId) return null;
-    return GROQ_CHAT_MODELS.find((model) => model.id === modelId)?.label ?? modelId;
-}
-
 export default function ChatForm({ history }: ChatFormProps) {
     const router = useRouter();
     const [provider, setProvider] = useState<SupportedProvider>(DEFAULT_CHAT_PROVIDER);
+    const [models, setModels] = useState<LiveGroqModel[]>(catalogFallback);
+    const [modelsMessage, setModelsMessage] = useState("Using current Groq catalog.");
     const [model, setModel] = useState(DEFAULT_CHAT_MODEL);
     const [prompt, setPrompt] = useState("");
     const [result, setResult] = useState<ChatResult | null>(null);
     const [loading, setLoading] = useState(false);
 
-    const selectedModel = GROQ_CHAT_MODELS.find((option) => option.id === model) ?? GROQ_CHAT_MODELS[0];
+    useEffect(() => {
+        let ignore = false;
+
+        async function loadModels() {
+            try {
+                const res = await fetch("/api/models/groq", {
+                    cache: "no-store",
+                });
+
+                const data = (await res.json().catch(() => null)) as ModelResponse | null;
+
+                if (!res.ok || !data?.models?.length) {
+                    if (!ignore) {
+                        setModels(catalogFallback);
+                        setModelsMessage(data?.error || "Live models unavailable, showing catalog fallback.");
+                    }
+                    return;
+                }
+
+                if (!ignore) {
+                    setModels(data.models);
+                    setModelsMessage("Live models loaded from Groq.");
+                    setModel((current) => data.models?.some((entry) => entry.id === current) ? current : data.models?.[0]?.id || DEFAULT_CHAT_MODEL);
+                }
+            } catch {
+                if (!ignore) {
+                    setModels(catalogFallback);
+                    setModelsMessage("Live models unavailable, showing catalog fallback.");
+                }
+            }
+        }
+
+        loadModels();
+
+        return () => {
+            ignore = true;
+        };
+    }, []);
+
+    const selectedModel = models.find((option) => option.id === model) ?? models[0] ?? catalogFallback[0];
 
     async function handleSubmit(e: React.FormEvent) {
         e.preventDefault();
@@ -154,9 +200,9 @@ export default function ChatForm({ history }: ChatFormProps) {
                                         onChange={(e) => setModel(e.target.value)}
                                         className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-slate-900 outline-none transition focus:border-slate-400 focus:ring-4 focus:ring-amber-100"
                                     >
-                                        {GROQ_CHAT_MODELS.map((option) => (
+                                        {models.map((option) => (
                                             <option key={option.id} value={option.id}>
-                                                {option.label} - {option.availability === "free" ? "Free" : "Paid"}
+                                                {option.label} - {option.availability === "free" ? "Free" : option.availability === "paid" ? "Paid" : "Check pricing"}
                                             </option>
                                         ))}
                                     </select>
@@ -171,15 +217,24 @@ export default function ChatForm({ history }: ChatFormProps) {
                                     <span className={`rounded-full px-3 py-1 text-xs font-semibold ${
                                         selectedModel.availability === "free"
                                             ? "bg-emerald-100 text-emerald-800"
-                                            : "bg-amber-100 text-amber-800"
+                                            : selectedModel.availability === "paid"
+                                                ? "bg-amber-100 text-amber-800"
+                                                : "bg-slate-100 text-slate-700"
                                     }`}>
-                                        {selectedModel.availability === "free" ? "Free plan" : "Paid"}
+                                        {selectedModel.availability === "free"
+                                            ? "Free plan"
+                                            : selectedModel.availability === "paid"
+                                                ? "Paid"
+                                                : "Pricing unknown"}
                                     </span>
                                     <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-700">
                                         {selectedModel.stage === "production" ? "Production" : "Preview"}
                                     </span>
                                     <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-700">
                                         {selectedModel.contextWindow} context
+                                    </span>
+                                    <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-700">
+                                        {selectedModel.source === "live" ? "Live list" : "Catalog fallback"}
                                     </span>
                                 </div>
 
@@ -191,6 +246,8 @@ export default function ChatForm({ history }: ChatFormProps) {
                                         <span className="font-semibold text-slate-900">Output:</span> {selectedModel.outputPrice}
                                     </div>
                                 </div>
+
+                                <p className="mt-3 text-xs text-slate-500">{modelsMessage}</p>
                             </div>
 
                             <textarea
