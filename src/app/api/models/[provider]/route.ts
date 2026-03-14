@@ -4,7 +4,8 @@ import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
 import { decryptApiKey } from "@/lib/crypto";
 import { listGroqModels } from "@/lib/groq";
-import { mergeProviderModels } from "@/lib/modelCatalog";
+import { mergeProviderModels, isSupportedProvider } from "@/lib/modelCatalog";
+import { listOpenRouterModels } from "@/lib/openrouter";
 
 function isDatabaseAvailabilityError(error: unknown) {
     return (
@@ -13,7 +14,10 @@ function isDatabaseAvailabilityError(error: unknown) {
     );
 }
 
-export async function GET() {
+export async function GET(
+    _req: Request,
+    { params }: { params: Promise<{ provider: string }> }
+) {
     try {
         const session = await auth();
 
@@ -21,18 +25,25 @@ export async function GET() {
             return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
         }
 
+        const { provider: rawProvider } = await params;
+
+        if (!isSupportedProvider(rawProvider)) {
+            return NextResponse.json({ error: "Unsupported provider" }, { status: 400 });
+        }
+
+        const provider = rawProvider;
         const record = await prisma.apiKey.findUnique({
             where: {
                 userId_provider: {
                     userId: session.user.id,
-                    provider: "groq",
+                    provider,
                 },
             },
         });
 
         if (!record) {
             return NextResponse.json(
-                { error: "No saved Groq key found" },
+                { error: `No saved ${provider} key found` },
                 { status: 404 }
             );
         }
@@ -43,11 +54,14 @@ export async function GET() {
             keyTag: record.keyTag,
         });
 
-        const liveModels = (await listGroqModels(apiKey)).map((id) => ({ id }));
+        const liveModels =
+            provider === "groq"
+                ? (await listGroqModels(apiKey)).map((id) => ({ id }))
+                : await listOpenRouterModels(apiKey);
 
         return NextResponse.json({
-            provider: "groq",
-            models: mergeProviderModels("groq", liveModels),
+            provider,
+            models: mergeProviderModels(provider, liveModels),
             source: "live",
         });
     } catch (error) {
@@ -59,7 +73,7 @@ export async function GET() {
         }
 
         const message =
-            error instanceof Error ? error.message : "Failed to load Groq models";
+            error instanceof Error ? error.message : "Failed to load models";
 
         return NextResponse.json({ error: message }, { status: 500 });
     }

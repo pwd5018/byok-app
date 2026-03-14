@@ -2,12 +2,18 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import { getProviderDefinition, type SupportedProvider } from "@/lib/modelCatalog";
 
-export default function SaveApiKeyForm() {
+type SaveApiKeyFormProps = {
+    provider: SupportedProvider;
+};
+
+export default function SaveApiKeyForm({ provider }: SaveApiKeyFormProps) {
     const router = useRouter();
     const [apiKey, setApiKey] = useState("");
     const [message, setMessage] = useState("");
     const [loading, setLoading] = useState(false);
+    const providerDefinition = getProviderDefinition(provider);
 
     async function handleSubmit(e: React.FormEvent) {
         e.preventDefault();
@@ -15,7 +21,7 @@ export default function SaveApiKeyForm() {
         setMessage("");
 
         try {
-            const res = await fetch("/api/keys/groq", {
+            const res = await fetch(`/api/keys/${provider}`, {
                 method: "POST",
                 headers: {
                     "Content-Type": "application/json",
@@ -32,7 +38,7 @@ export default function SaveApiKeyForm() {
                 return;
             }
 
-            setMessage("Groq API key saved and verified.");
+            setMessage(`${providerDefinition.label} API key saved and verified.`);
             setApiKey("");
             setLoading(false);
             router.refresh();
@@ -45,12 +51,12 @@ export default function SaveApiKeyForm() {
     return (
         <form onSubmit={handleSubmit} className="space-y-4">
             <div className="space-y-2">
-                <label className="text-sm font-semibold text-slate-800">Groq API key</label>
+                <label className="text-sm font-semibold text-slate-800">{providerDefinition.keyLabel}</label>
                 <input
                     type="password"
                     value={apiKey}
                     onChange={(e) => setApiKey(e.target.value)}
-                    placeholder="gsk_..."
+                    placeholder={providerDefinition.keyPlaceholder}
                     className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-slate-900 outline-none transition focus:border-slate-400 focus:ring-4 focus:ring-amber-100"
                     required
                 />

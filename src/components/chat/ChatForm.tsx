@@ -1,15 +1,17 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { memo, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import MarkdownMessage from "@/components/chat/MarkdownMessage";
 import {
-    DEFAULT_CHAT_MODEL,
     DEFAULT_CHAT_PROVIDER,
-    GROQ_CHAT_MODELS,
+    PROVIDERS,
+    getDefaultModel,
     getModelLabel,
-    mergeGroqModels,
-    type LiveGroqModel,
+    getProviderDefinition,
+    getProviderModels,
+    mergeProviderModels,
+    type LiveModelOption,
     type SupportedProvider,
 } from "@/lib/modelCatalog";
 
@@ -37,11 +39,9 @@ type ChatFormProps = {
 };
 
 type ModelResponse = {
-    models?: LiveGroqModel[];
+    models?: LiveModelOption[];
     error?: string;
 };
-
-const catalogFallback = mergeGroqModels(GROQ_CHAT_MODELS.map((model) => model.id));
 
 function formatTimestamp(value: Date) {
     return new Intl.DateTimeFormat("en-US", {
@@ -56,22 +56,83 @@ function getRoleLabel(role: string) {
     return role;
 }
 
+function getCatalogFallback(provider: SupportedProvider) {
+    return mergeProviderModels(
+        provider,
+        getProviderModels(provider).map((entry) => ({ id: entry.id }))
+    );
+}
+
+type HistoryMessageProps = {
+    message: ChatHistoryItem;
+};
+
+const HistoryMessage = memo(function HistoryMessage({ message }: HistoryMessageProps) {
+    const isUser = message.role === "user";
+
+    return (
+        <article
+            className={`rounded-[20px] border px-4 py-3 transition ${
+                isUser
+                    ? "ml-4 border-amber-200 bg-[linear-gradient(180deg,rgba(255,245,225,0.98),rgba(255,238,207,0.95))]"
+                    : "mr-4 border-slate-200 bg-white/92"
+            }`}
+            style={{
+                contentVisibility: "auto",
+                containIntrinsicSize: "220px",
+            }}
+        >
+            <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                <div className="flex flex-wrap items-center gap-2">
+                    <span
+                        className={`inline-flex rounded-full px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.14em] ${
+                            isUser
+                                ? "bg-amber-100 text-amber-800"
+                                : "bg-slate-100 text-slate-700"
+                        }`}
+                    >
+                        {getRoleLabel(message.role)}
+                    </span>
+                    {message.model ? (
+                        <span className="text-xs text-slate-500">{getModelLabel(message.model) || message.model}</span>
+                    ) : null}
+                </div>
+                <span className="text-xs text-slate-500">{formatTimestamp(message.createdAt)}</span>
+            </div>
+
+            {isUser ? (
+                <p className="mt-3 whitespace-pre-wrap text-sm leading-7 text-slate-800">
+                    {message.content}
+                </p>
+            ) : (
+                <div className="mt-3 text-sm text-slate-800">
+                    <MarkdownMessage content={message.content} />
+                </div>
+            )}
+        </article>
+    );
+});
+
 export default function ChatForm({ history }: ChatFormProps) {
     const router = useRouter();
     const [provider, setProvider] = useState<SupportedProvider>(DEFAULT_CHAT_PROVIDER);
-    const [models, setModels] = useState<LiveGroqModel[]>(catalogFallback);
-    const [modelsMessage, setModelsMessage] = useState("Using current Groq catalog.");
-    const [model, setModel] = useState(DEFAULT_CHAT_MODEL);
+    const [models, setModels] = useState<LiveModelOption[]>(getCatalogFallback(DEFAULT_CHAT_PROVIDER));
+    const [modelsMessage, setModelsMessage] = useState(
+        `Using current ${getProviderDefinition(DEFAULT_CHAT_PROVIDER).label} catalog.`
+    );
+    const [model, setModel] = useState(getDefaultModel(DEFAULT_CHAT_PROVIDER));
     const [prompt, setPrompt] = useState("");
     const [result, setResult] = useState<ChatResult | null>(null);
     const [loading, setLoading] = useState(false);
 
     useEffect(() => {
         let ignore = false;
+        const providerDefinition = getProviderDefinition(provider);
+        const catalogFallback = getCatalogFallback(provider);
 
         async function loadModels() {
             try {
-                const res = await fetch("/api/models/groq", {
+                const res = await fetch(`/api/models/${provider}`, {
                     cache: "no-store",
                 });
 
@@ -80,20 +141,36 @@ export default function ChatForm({ history }: ChatFormProps) {
                 if (!res.ok || !data?.models?.length) {
                     if (!ignore) {
                         setModels(catalogFallback);
-                        setModelsMessage(data?.error || "Live models unavailable, showing catalog fallback.");
+                        setModelsMessage(
+                            data?.error || "Live models unavailable, showing catalog fallback."
+                        );
+                        setModel((current) =>
+                            catalogFallback.some((entry) => entry.id === current)
+                                ? current
+                                : getDefaultModel(provider)
+                        );
                     }
                     return;
                 }
 
                 if (!ignore) {
                     setModels(data.models);
-                    setModelsMessage("Live models loaded from Groq.");
-                    setModel((current) => data.models?.some((entry) => entry.id === current) ? current : data.models?.[0]?.id || DEFAULT_CHAT_MODEL);
+                    setModelsMessage(`Live models loaded from ${providerDefinition.label}.`);
+                    setModel((current) =>
+                        data.models?.some((entry) => entry.id === current)
+                            ? current
+                            : data.models?.[0]?.id || getDefaultModel(provider)
+                    );
                 }
             } catch {
                 if (!ignore) {
                     setModels(catalogFallback);
                     setModelsMessage("Live models unavailable, showing catalog fallback.");
+                    setModel((current) =>
+                        catalogFallback.some((entry) => entry.id === current)
+                            ? current
+                            : getDefaultModel(provider)
+                    );
                 }
             }
         }
@@ -103,9 +180,11 @@ export default function ChatForm({ history }: ChatFormProps) {
         return () => {
             ignore = true;
         };
-    }, []);
+    }, [provider]);
 
-    const selectedModel = models.find((option) => option.id === model) ?? models[0] ?? catalogFallback[0];
+    const providerFallback = getCatalogFallback(provider);
+    const selectedModel =
+        models.find((option) => option.id === model) ?? models[0] ?? providerFallback[0];
 
     async function handleSubmit(e: React.FormEvent) {
         e.preventDefault();
@@ -148,9 +227,9 @@ export default function ChatForm({ history }: ChatFormProps) {
             <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
                 <div>
                     <p className="eyebrow">Prompt playground</p>
-                    <h2 className="display-font text-2xl font-semibold text-slate-950">Try Groq with your saved key</h2>
+                    <h2 className="display-font text-2xl font-semibold text-slate-950">Try your saved provider key</h2>
                     <p className="mt-2 text-sm leading-6 text-slate-600">
-                        Choose a provider and model, then send a prompt using the encrypted key already attached to your account.
+                        Choose a provider and model, then send a prompt using the matching encrypted key already attached to your account.
                     </p>
                 </div>
                 <div className="rounded-2xl border border-slate-200/80 bg-white/70 px-4 py-3 text-sm text-slate-600">
@@ -168,7 +247,7 @@ export default function ChatForm({ history }: ChatFormProps) {
                             <div className="flex flex-wrap items-center justify-between gap-3">
                                 <div>
                                     <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Composer</p>
-                                    <p className="mt-1 text-sm text-slate-600">Draft the next prompt and send it with your saved key.</p>
+                                    <p className="mt-1 text-sm text-slate-600">Draft the next prompt and send it with the selected saved key.</p>
                                 </div>
                                 <div className="rounded-full border border-amber-200 bg-amber-50 px-3 py-1 text-xs font-semibold text-amber-800">
                                     {loading ? "Working..." : "Ready"}
@@ -186,7 +265,11 @@ export default function ChatForm({ history }: ChatFormProps) {
                                         onChange={(e) => setProvider(e.target.value as SupportedProvider)}
                                         className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-slate-900 outline-none transition focus:border-slate-400 focus:ring-4 focus:ring-amber-100"
                                     >
-                                        <option value="groq">Groq</option>
+                                        {PROVIDERS.map((entry) => (
+                                            <option key={entry.id} value={entry.id}>
+                                                {entry.label}
+                                            </option>
+                                        ))}
                                     </select>
                                 </div>
 
@@ -289,7 +372,7 @@ export default function ChatForm({ history }: ChatFormProps) {
                                     <h3 className="display-font mt-1 text-xl font-semibold text-slate-950">Fresh response</h3>
                                 </div>
                                 <div className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-xs text-slate-600">
-                                    {getModelLabel(result.model) || "Unknown model"}
+                                    {getModelLabel(result.model ?? null) || "Unknown model"}
                                 </div>
                             </div>
 
@@ -300,7 +383,7 @@ export default function ChatForm({ history }: ChatFormProps) {
                             <div className="mt-4 grid gap-3 sm:grid-cols-3">
                                 <div className="section-card p-4">
                                     <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Model</p>
-                                    <p className="mt-2 text-sm font-medium text-slate-900">{getModelLabel(result.model) || "Unknown"}</p>
+                                    <p className="mt-2 text-sm font-medium text-slate-900">{getModelLabel(result.model ?? null) || "Unknown"}</p>
                                 </div>
                                 <div className="section-card p-4">
                                     <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Total tokens</p>
@@ -326,50 +409,11 @@ export default function ChatForm({ history }: ChatFormProps) {
                         </div>
                     </div>
 
-                    <div className="mt-4 max-h-[42rem] space-y-3 overflow-y-auto pr-1">
+                    <div className="mt-4 max-h-[42rem] space-y-3 overflow-y-auto pr-1 [scrollbar-gutter:stable]">
                         {history.length ? (
-                            history.map((message) => {
-                                const isUser = message.role === "user";
-
-                                return (
-                                    <article
-                                        key={message.id}
-                                        className={`rounded-[24px] border px-5 py-4 transition ${
-                                            isUser
-                                                ? "ml-6 border-amber-200 bg-[linear-gradient(180deg,rgba(255,245,225,0.98),rgba(255,238,207,0.95))]"
-                                                : "mr-6 border-slate-200 bg-white/92"
-                                        }`}
-                                    >
-                                        <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-                                            <div className="flex flex-wrap items-center gap-2">
-                                                <span
-                                                    className={`inline-flex rounded-full px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.14em] ${
-                                                        isUser
-                                                            ? "bg-amber-100 text-amber-800"
-                                                            : "bg-slate-100 text-slate-700"
-                                                    }`}
-                                                >
-                                                    {getRoleLabel(message.role)}
-                                                </span>
-                                                {message.model ? (
-                                                    <span className="text-xs text-slate-500">{getModelLabel(message.model) || message.model}</span>
-                                                ) : null}
-                                            </div>
-                                            <span className="text-xs text-slate-500">{formatTimestamp(message.createdAt)}</span>
-                                        </div>
-
-                                        {isUser ? (
-                                            <p className="mt-3 whitespace-pre-wrap text-sm leading-7 text-slate-800">
-                                                {message.content}
-                                            </p>
-                                        ) : (
-                                            <div className="mt-3 text-sm text-slate-800">
-                                                <MarkdownMessage content={message.content} />
-                                            </div>
-                                        )}
-                                    </article>
-                                );
-                            })
+                            history.map((message) => (
+                                <HistoryMessage key={message.id} message={message} />
+                            ))
                         ) : (
                             <div className="rounded-[24px] border border-dashed border-slate-300 bg-white/60 px-5 py-8 text-sm text-slate-600">
                                 No chat history yet. Send your first prompt to start building the conversation log.

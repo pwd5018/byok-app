@@ -57,7 +57,7 @@ export default function SignupPage() {
                         <p className="eyebrow">Create your workspace</p>
                         <h1 className="display-font text-3xl font-semibold text-slate-950 sm:text-4xl">Get set up in a minute</h1>
                         <p className="text-sm leading-6 text-slate-600">
-                            Create an account to store and verify your Groq key, then start chatting with your own API access.
+                            Create an account to store and verify your provider keys, then start chatting with your own API access.
                         </p>
                     </div>
 
@@ -93,7 +93,7 @@ export default function SignupPage() {
                         </div>
 
                         <div className="rounded-2xl border border-teal-100 bg-teal-50/80 p-4 text-sm leading-6 text-slate-700">
-                            Your password is hashed before storage, and your Groq key is encrypted separately once you add it.
+                            Your password is hashed before storage, and each provider key is encrypted separately once you add it.
                         </div>
 
                         <button
@@ -122,7 +122,7 @@ export default function SignupPage() {
                 <section className="order-1 space-y-6 lg:order-2 lg:pl-8">
                     <div className="inline-flex items-center gap-2 rounded-full border border-[var(--line)] bg-white/60 px-4 py-2 text-sm text-[var(--muted)] backdrop-blur-sm">
                         <span className="h-2 w-2 rounded-full bg-teal-500" />
-                        Personal Groq access with modern account management
+                        Personal provider access with modern account management
                     </div>
 
                     <div className="space-y-4">
@@ -131,7 +131,7 @@ export default function SignupPage() {
                             A calmer control panel for your model credentials.
                         </h2>
                         <p className="text-balance max-w-xl text-lg leading-8 text-slate-600">
-                            Keep your team-friendly app experience while each user connects with their own Groq account and usage limits.
+                            Keep your team-friendly app experience while each user connects with their own provider accounts and usage limits.
                         </p>
                     </div>
 
@@ -142,7 +142,7 @@ export default function SignupPage() {
                         </div>
                         <div className="section-card p-5">
                             <p className="text-base font-semibold text-slate-900">Key lifecycle</p>
-                            <p className="mt-2 text-sm leading-6 text-slate-600">Save, verify, rotate, or remove your Groq key from one place.</p>
+                            <p className="mt-2 text-sm leading-6 text-slate-600">Save, verify, rotate, or remove your provider keys from one place.</p>
                         </div>
                     </div>
                 </section>

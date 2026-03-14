@@ -2,15 +2,21 @@
 
 import { useRouter } from "next/navigation";
 import { useState } from "react";
+import { getProviderDefinition, type SupportedProvider } from "@/lib/modelCatalog";
 
-export default function DeleteApiKeyButton() {
+type DeleteApiKeyButtonProps = {
+    provider: SupportedProvider;
+};
+
+export default function DeleteApiKeyButton({ provider }: DeleteApiKeyButtonProps) {
     const router = useRouter();
     const [loading, setLoading] = useState(false);
     const [message, setMessage] = useState("");
+    const providerDefinition = getProviderDefinition(provider);
 
     async function handleDelete() {
         const confirmed = window.confirm(
-            "Delete your saved Groq API key? This cannot be undone."
+            `Delete your saved ${providerDefinition.label} API key? This cannot be undone.`
         );
 
         if (!confirmed) return;
@@ -19,7 +25,7 @@ export default function DeleteApiKeyButton() {
         setMessage("");
 
         try {
-            const res = await fetch("/api/keys/groq", {
+            const res = await fetch(`/api/keys/${provider}`, {
                 method: "DELETE",
             });
 

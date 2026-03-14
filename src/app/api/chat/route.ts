@@ -4,10 +4,17 @@ import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
 import { decryptApiKey } from "@/lib/crypto";
 import { createGroqChatCompletion } from "@/lib/groq";
-import { DEFAULT_CHAT_MODEL, DEFAULT_CHAT_PROVIDER, findGroqChatModel } from "@/lib/modelCatalog";
+import { createOpenRouterChatCompletion } from "@/lib/openrouter";
+import {
+    DEFAULT_CHAT_MODEL,
+    DEFAULT_CHAT_PROVIDER,
+    findChatModel,
+    getProviderDefinition,
+    isSupportedProvider,
+} from "@/lib/modelCatalog";
 
 const systemPrompt =
-    "You are a helpful assistant inside a bring-your-own-key Groq app.";
+    "You are a helpful assistant inside a bring-your-own-key multi-provider app.";
 
 function isDatabaseAvailabilityError(error: unknown) {
     return (
@@ -25,12 +32,10 @@ export async function POST(req: NextRequest) {
         }
 
         const body = await req.json();
-        const prompt =
-            typeof body.prompt === "string" ? body.prompt.trim() : "";
+        const prompt = typeof body.prompt === "string" ? body.prompt.trim() : "";
         const provider =
             typeof body.provider === "string" ? body.provider : DEFAULT_CHAT_PROVIDER;
-        const model =
-            typeof body.model === "string" ? body.model : DEFAULT_CHAT_MODEL;
+        const model = typeof body.model === "string" ? body.model : DEFAULT_CHAT_MODEL;
 
         if (!prompt) {
             return NextResponse.json(
@@ -39,14 +44,14 @@ export async function POST(req: NextRequest) {
             );
         }
 
-        if (provider !== "groq") {
+        if (!isSupportedProvider(provider)) {
             return NextResponse.json(
                 { error: "Unsupported provider" },
                 { status: 400 }
             );
         }
 
-        const selectedModel = findGroqChatModel(model);
+        const selectedModel = findChatModel(provider, model);
         if (!selectedModel) {
             return NextResponse.json(
                 { error: "Unsupported model" },
@@ -65,37 +70,46 @@ export async function POST(req: NextRequest) {
 
         if (!apiKeyRecord) {
             return NextResponse.json(
-                { error: "No Groq API key saved for this user" },
+                { error: `No ${getProviderDefinition(provider).label} API key saved for this user` },
                 { status: 400 }
             );
         }
 
-        const groqApiKey = decryptApiKey({
+        const apiKey = decryptApiKey({
             encryptedKey: apiKeyRecord.encryptedKey,
             keyIv: apiKeyRecord.keyIv,
             keyTag: apiKeyRecord.keyTag,
         });
 
-        const completion = await createGroqChatCompletion({
-            apiKey: groqApiKey,
-            model: selectedModel.id,
-            messages: [
-                {
-                    role: "system",
-                    content: systemPrompt,
-                },
-                {
-                    role: "user",
-                    content: prompt,
-                },
-            ],
-        });
+        const messages = [
+            {
+                role: "system" as const,
+                content: systemPrompt,
+            },
+            {
+                role: "user" as const,
+                content: prompt,
+            },
+        ];
+
+        const completion =
+            provider === "groq"
+                ? await createGroqChatCompletion({
+                      apiKey,
+                      model: selectedModel.id,
+                      messages,
+                  })
+                : await createOpenRouterChatCompletion({
+                      apiKey,
+                      model: selectedModel.id,
+                      messages,
+                  });
 
         const content = completion?.choices?.[0]?.message?.content;
 
         if (typeof content !== "string") {
             return NextResponse.json(
-                { error: "Groq returned an unexpected response format" },
+                { error: `${getProviderDefinition(provider).label} returned an unexpected response format` },
                 { status: 502 }
             );
         }

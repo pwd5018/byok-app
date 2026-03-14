@@ -3,13 +3,44 @@ import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
 import { encryptApiKey, maskApiKey } from "@/lib/crypto";
 import { validateGroqApiKey } from "@/lib/groq";
+import { validateOpenRouterApiKey } from "@/lib/openrouter";
+import {
+    getProviderDefinition,
+    isSupportedProvider,
+    type SupportedProvider,
+} from "@/lib/modelCatalog";
 
-export async function POST(req: NextRequest) {
+async function validateApiKey(provider: SupportedProvider, apiKey: string) {
+    if (provider === "groq") {
+        return validateGroqApiKey(apiKey);
+    }
+
+    return validateOpenRouterApiKey(apiKey);
+}
+
+function getProviderFromParams(params: { provider: string }) {
+    if (!isSupportedProvider(params.provider)) {
+        return null;
+    }
+
+    return params.provider;
+}
+
+export async function POST(
+    req: NextRequest,
+    { params }: { params: Promise<{ provider: string }> }
+) {
     try {
         const session = await auth();
 
         if (!session?.user?.id) {
             return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+        }
+
+        const provider = getProviderFromParams(await params);
+
+        if (!provider) {
+            return NextResponse.json({ error: "Unsupported provider" }, { status: 400 });
         }
 
         const body = await req.json();
@@ -19,7 +50,7 @@ export async function POST(req: NextRequest) {
             return NextResponse.json({ error: "API key is required" }, { status: 400 });
         }
 
-        const validation = await validateGroqApiKey(apiKey);
+        const validation = await validateApiKey(provider, apiKey);
         const encrypted = encryptApiKey(apiKey);
         const now = new Date();
 
@@ -27,7 +58,7 @@ export async function POST(req: NextRequest) {
             where: {
                 userId_provider: {
                     userId: session.user.id,
-                    provider: "groq",
+                    provider,
                 },
             },
             update: {
@@ -41,7 +72,7 @@ export async function POST(req: NextRequest) {
             },
             create: {
                 userId: session.user.id,
-                provider: "groq",
+                provider,
                 encryptedKey: encrypted.encryptedKey,
                 keyIv: encrypted.keyIv,
                 keyTag: encrypted.keyTag,
@@ -59,14 +90,22 @@ export async function POST(req: NextRequest) {
             );
         }
 
-        return NextResponse.json({ success: true, valid: true });
+        return NextResponse.json({
+            success: true,
+            valid: true,
+            provider,
+            providerLabel: getProviderDefinition(provider).label,
+        });
     } catch (error) {
-        console.error("Save Groq key error:", error);
+        console.error("Save API key error:", error);
         return NextResponse.json({ error: "Failed to save API key" }, { status: 500 });
     }
 }
 
-export async function DELETE() {
+export async function DELETE(
+    _req: NextRequest,
+    { params }: { params: Promise<{ provider: string }> }
+) {
     try {
         const session = await auth();
 
@@ -74,16 +113,22 @@ export async function DELETE() {
             return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
         }
 
+        const provider = getProviderFromParams(await params);
+
+        if (!provider) {
+            return NextResponse.json({ error: "Unsupported provider" }, { status: 400 });
+        }
+
         await prisma.apiKey.deleteMany({
             where: {
                 userId: session.user.id,
-                provider: "groq",
+                provider,
             },
         });
 
         return NextResponse.json({ success: true });
     } catch (error) {
-        console.error("Delete Groq key error:", error);
+        console.error("Delete API key error:", error);
         return NextResponse.json({ error: "Failed to delete API key" }, { status: 500 });
     }
 }

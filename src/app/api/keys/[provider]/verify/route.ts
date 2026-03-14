@@ -3,8 +3,25 @@ import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
 import { decryptApiKey } from "@/lib/crypto";
 import { validateGroqApiKey } from "@/lib/groq";
+import { validateOpenRouterApiKey } from "@/lib/openrouter";
+import {
+    getProviderDefinition,
+    isSupportedProvider,
+    type SupportedProvider,
+} from "@/lib/modelCatalog";
 
-export async function POST() {
+async function validateApiKey(provider: SupportedProvider, apiKey: string) {
+    if (provider === "groq") {
+        return validateGroqApiKey(apiKey);
+    }
+
+    return validateOpenRouterApiKey(apiKey);
+}
+
+export async function POST(
+    _req: Request,
+    { params }: { params: Promise<{ provider: string }> }
+) {
     try {
         const session = await auth();
 
@@ -12,18 +29,27 @@ export async function POST() {
             return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
         }
 
+        const { provider: rawProvider } = await params;
+
+        if (!isSupportedProvider(rawProvider)) {
+            return NextResponse.json({ error: "Unsupported provider" }, { status: 400 });
+        }
+
+        const provider = rawProvider;
+        const providerDefinition = getProviderDefinition(provider);
+
         const record = await prisma.apiKey.findUnique({
             where: {
                 userId_provider: {
                     userId: session.user.id,
-                    provider: "groq",
+                    provider,
                 },
             },
         });
 
         if (!record) {
             return NextResponse.json(
-                { error: "No saved Groq key found" },
+                { error: `No saved ${providerDefinition.label} key found` },
                 { status: 404 }
             );
         }
@@ -34,7 +60,7 @@ export async function POST() {
             keyTag: record.keyTag,
         });
 
-        const validation = await validateGroqApiKey(apiKey);
+        const validation = await validateApiKey(provider, apiKey);
         const now = new Date();
 
         await prisma.apiKey.update({
@@ -55,7 +81,7 @@ export async function POST() {
 
         return NextResponse.json({ valid: true });
     } catch (error) {
-        console.error("Verify Groq key error:", error);
+        console.error("Verify API key error:", error);
         return NextResponse.json({ error: "Failed to verify API key" }, { status: 500 });
     }
 }

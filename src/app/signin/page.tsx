@@ -8,16 +8,16 @@ export default function SignInPage() {
                 <section className="space-y-6">
                     <div className="inline-flex items-center gap-2 rounded-full border border-[var(--line)] bg-white/60 px-4 py-2 text-sm text-[var(--muted)] backdrop-blur-sm">
                         <span className="h-2 w-2 rounded-full bg-amber-500" />
-                        Bring your own Groq key, keep control of access
+                        Bring your own AI key, keep control of access
                     </div>
 
                     <div className="space-y-4">
-                        <p className="eyebrow">Groq Workspace</p>
+                        <p className="eyebrow">Provider Workspace</p>
                         <h1 className="display-font max-w-2xl text-5xl font-semibold tracking-tight text-slate-900 sm:text-6xl">
                             Clean, private access to your AI workspace.
                         </h1>
                         <p className="text-balance max-w-xl text-lg leading-8 text-slate-600">
-                            Sign in to manage your encrypted Groq API key, verify connectivity, and use your own account for chat requests.
+                            Sign in to manage your encrypted provider API keys, verify connectivity, and use your own accounts for chat requests.
                         </p>
                     </div>
 
@@ -28,7 +28,7 @@ export default function SignInPage() {
                         </div>
                         <div className="section-card p-4">
                             <p className="text-sm font-semibold text-slate-900">Fast verification</p>
-                            <p className="mt-2 text-sm leading-6 text-slate-600">Validate your saved key against Groq before you use it.</p>
+                            <p className="mt-2 text-sm leading-6 text-slate-600">Validate your saved provider key before you use it.</p>
                         </div>
                         <div className="section-card p-4">
                             <p className="text-sm font-semibold text-slate-900">Personal access</p>
