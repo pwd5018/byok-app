@@ -186,6 +186,9 @@ export async function POST(req: NextRequest) {
                     userId: session.user.id,
                     role: "user",
                     content: prompt,
+                    provider,
+                    runMode: "single",
+                    memoryMode,
                 },
             }),
             prisma.chatMessage.create({
@@ -193,7 +196,16 @@ export async function POST(req: NextRequest) {
                     userId: session.user.id,
                     role: "assistant",
                     content,
+                    provider,
                     model: completionModel,
+                    runMode: "single",
+                    memoryMode,
+                    promptTokens: completion.usage?.prompt_tokens ?? null,
+                    completionTokens: completion.usage?.completion_tokens ?? null,
+                    totalTokens: completion.usage?.total_tokens ?? null,
+                    toolCalls: Array.isArray(completion?.choices?.[0]?.message?.tool_calls)
+                        ? completion.choices[0].message.tool_calls.length
+                        : null,
                 },
             }),
         ]);
@@ -220,4 +232,5 @@ export async function POST(req: NextRequest) {
         return NextResponse.json({ error: message }, { status: 500 });
     }
 }
+
 

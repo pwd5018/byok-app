@@ -12,6 +12,7 @@ import {
     getModelLabel,
     getProviderDefinition,
     getProviderModels,
+    isSupportedProvider,
     mergeProviderModels,
     type LiveModelOption,
     type SupportedProvider,
@@ -48,7 +49,16 @@ type ChatHistoryItem = {
     id: string;
     role: string;
     content: string;
+    provider: string | null;
     model: string | null;
+    runMode: string | null;
+    memoryMode: string | null;
+    comparisonGroupId: string | null;
+    latencyMs: number | null;
+    promptTokens: number | null;
+    completionTokens: number | null;
+    totalTokens: number | null;
+    toolCalls: number | null;
     createdAt: Date;
 };
 
@@ -180,9 +190,10 @@ function ControlLabel({ label, help }: { label: string; help: string }) {
 
 type HistoryMessageProps = {
     message: ChatHistoryItem;
+    showMetadata: boolean;
 };
 
-const HistoryMessage = memo(function HistoryMessage({ message }: HistoryMessageProps) {
+const HistoryMessage = memo(function HistoryMessage({ message, showMetadata }: HistoryMessageProps) {
     const isUser = message.role === "user";
 
     return (
@@ -215,6 +226,56 @@ const HistoryMessage = memo(function HistoryMessage({ message }: HistoryMessageP
                 <span className="text-[11px] text-slate-400">{formatTimestamp(message.createdAt)}</span>
             </div>
 
+            {showMetadata && (message.runMode || message.provider || message.latencyMs !== null || message.totalTokens !== null || message.toolCalls !== null || message.comparisonGroupId) ? (
+                <div className="mt-3 grid gap-2 sm:grid-cols-2 xl:grid-cols-3">
+                    {message.runMode ? (
+                        <div className="rounded-2xl bg-slate-100/90 px-3 py-2 text-xs text-slate-600">
+                            <span className="font-semibold text-slate-900">Mode:</span> {message.runMode}
+                        </div>
+                    ) : null}
+                    {message.memoryMode ? (
+                        <div className="rounded-2xl bg-slate-100/90 px-3 py-2 text-xs text-slate-600">
+                            <span className="font-semibold text-slate-900">Memory:</span> {message.memoryMode}
+                        </div>
+                    ) : null}
+                    {message.provider && isSupportedProvider(message.provider) ? (
+                        <div className="rounded-2xl bg-slate-100/90 px-3 py-2 text-xs text-slate-600">
+                            <span className="font-semibold text-slate-900">Provider:</span> {getProviderDefinition(message.provider).label}
+                        </div>
+                    ) : null}
+                    {message.latencyMs !== null ? (
+                        <div className="rounded-2xl bg-slate-100/90 px-3 py-2 text-xs text-slate-600">
+                            <span className="font-semibold text-slate-900">Latency:</span> {message.latencyMs} ms
+                        </div>
+                    ) : null}
+                    {message.totalTokens !== null ? (
+                        <div className="rounded-2xl bg-slate-100/90 px-3 py-2 text-xs text-slate-600">
+                            <span className="font-semibold text-slate-900">Total tokens:</span> {message.totalTokens}
+                        </div>
+                    ) : null}
+                    {message.promptTokens !== null ? (
+                        <div className="rounded-2xl bg-slate-100/90 px-3 py-2 text-xs text-slate-600">
+                            <span className="font-semibold text-slate-900">Prompt tokens:</span> {message.promptTokens}
+                        </div>
+                    ) : null}
+                    {message.completionTokens !== null ? (
+                        <div className="rounded-2xl bg-slate-100/90 px-3 py-2 text-xs text-slate-600">
+                            <span className="font-semibold text-slate-900">Completion tokens:</span> {message.completionTokens}
+                        </div>
+                    ) : null}
+                    {message.toolCalls !== null ? (
+                        <div className="rounded-2xl bg-slate-100/90 px-3 py-2 text-xs text-slate-600">
+                            <span className="font-semibold text-slate-900">Tool calls:</span> {message.toolCalls}
+                        </div>
+                    ) : null}
+                    {message.comparisonGroupId ? (
+                        <div className="rounded-2xl bg-slate-100/90 px-3 py-2 text-xs text-slate-600 sm:col-span-2 xl:col-span-3">
+                            <span className="font-semibold text-slate-900">Comparison group:</span> {message.comparisonGroupId}
+                        </div>
+                    ) : null}
+                </div>
+            ) : null}
+
             {isUser ? (
                 <p className="mt-2.5 whitespace-pre-wrap text-sm leading-6 text-slate-800">
                     {message.content}
@@ -231,9 +292,10 @@ const HistoryMessage = memo(function HistoryMessage({ message }: HistoryMessageP
 type ConversationBlockProps = {
     group: ConversationGroup;
     index: number;
+    showMetadata: boolean;
 };
 
-const ConversationBlock = memo(function ConversationBlock({ group, index }: ConversationBlockProps) {
+const ConversationBlock = memo(function ConversationBlock({ group, index, showMetadata }: ConversationBlockProps) {
     return (
         <section className="rounded-[22px] border border-slate-200/80 bg-[linear-gradient(180deg,rgba(255,255,255,0.84),rgba(250,247,242,0.92))] p-4 shadow-[0_10px_30px_rgba(20,33,61,0.04)]">
             <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-200/80 pb-3">
@@ -252,7 +314,7 @@ const ConversationBlock = memo(function ConversationBlock({ group, index }: Conv
 
             <div className="mt-3 space-y-3">
                 {group.messages.map((message) => (
-                    <HistoryMessage key={message.id} message={message} />
+                    <HistoryMessage key={message.id} message={message} showMetadata={showMetadata} />
                 ))}
             </div>
         </section>
@@ -276,6 +338,7 @@ export default function ChatForm({ history, configuredProviders }: ChatFormProps
     const [memoryMode, setMemoryMode] = useState<MemoryMode>("full");
     const [result, setResult] = useState<ChatResult | null>(null);
     const [compareResults, setCompareResults] = useState<CompareResult[]>([]);
+    const [showHistoryMetadata, setShowHistoryMetadata] = useState(false);
     const [loading, setLoading] = useState(false);
     const [visibleGroupCount, setVisibleGroupCount] = useState(INITIAL_VISIBLE_GROUPS);
     const [targets, setTargets] = useState<ComparisonTarget[]>([
@@ -1002,6 +1065,13 @@ export default function ChatForm({ history, configuredProviders }: ChatFormProps
                         <div className="rounded-full border border-slate-200/80 bg-white/80 px-3 py-1.5 text-xs text-slate-600">
                             {conversationGroups.length} exchange{conversationGroups.length === 1 ? "" : "s"}
                         </div>
+                        <button
+                            type="button"
+                            onClick={() => setShowHistoryMetadata((current) => !current)}
+                            className="rounded-full border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-800 transition hover:border-slate-400 hover:bg-slate-50"
+                        >
+                            {showHistoryMetadata ? "Hide metadata" : "Show metadata"}
+                        </button>
                         <PurgeChatHistoryButton
                             disabled={!conversationGroups.length}
                             onPurged={handleHistoryPurged}
@@ -1034,6 +1104,7 @@ export default function ChatForm({ history, configuredProviders }: ChatFormProps
                                     key={group.id}
                                     group={group}
                                     index={absoluteIndex}
+                                    showMetadata={showHistoryMetadata}
                                 />
                             );
                         })
@@ -1047,6 +1118,9 @@ export default function ChatForm({ history, configuredProviders }: ChatFormProps
         </section>
     );
 }
+
+
+
 
 
 

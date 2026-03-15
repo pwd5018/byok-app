@@ -1,4 +1,5 @@
-import { performance } from "node:perf_hooks";
+import { randomUUID } from 'node:crypto';
+import { performance } from 'node:perf_hooks';
 import { Prisma } from "@prisma/client";
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/auth";
@@ -231,6 +232,7 @@ export async function POST(req: NextRequest) {
         );
 
         const now = new Date();
+        const comparisonGroupId = randomUUID();
         const successfulResults = results.filter((entry) => entry.status === "success");
 
         if (successfulResults.length) {
@@ -240,6 +242,9 @@ export async function POST(req: NextRequest) {
                         userId: session.user.id,
                         role: "user",
                         content: prompt,
+                        runMode: "compare",
+                        memoryMode,
+                        comparisonGroupId,
                     },
                 }),
                 ...successfulResults.map((entry) =>
@@ -248,7 +253,16 @@ export async function POST(req: NextRequest) {
                             userId: session.user.id,
                             role: "assistant",
                             content: entry.output,
+                            provider: entry.provider,
                             model: entry.model,
+                            runMode: "compare",
+                            memoryMode,
+                            comparisonGroupId,
+                            latencyMs: entry.latencyMs,
+                            promptTokens: entry.usage?.prompt_tokens ?? null,
+                            completionTokens: entry.usage?.completion_tokens ?? null,
+                            totalTokens: entry.usage?.total_tokens ?? null,
+                            toolCalls: entry.toolCalls,
                         },
                     })
                 ),
@@ -285,4 +299,6 @@ export async function POST(req: NextRequest) {
         );
     }
 }
+
+
 
