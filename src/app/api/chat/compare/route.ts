@@ -5,7 +5,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
 import { decryptApiKey } from "@/lib/crypto";
-import { sanitizeGenerationControls } from "@/lib/chatOptions";
+import { sanitizeGenerationControls } from '@/lib/chatOptions';
+import { buildScopedHistoryMessages, getMemoryMode, type ChatHistoryContextRecord, type ChatMessageInput } from '@/lib/chatMemory';
 import { createGoogleChatCompletion } from "@/lib/google";
 import { createGroqChatCompletion } from "@/lib/groq";
 import { createOpenRouterChatCompletion } from "@/lib/openrouter";
@@ -19,17 +20,6 @@ import {
 
 const systemPrompt =
     "You are a helpful assistant inside a bring-your-own-key multi-provider app.";
-
-type MemoryMode = "full" | "stateless";
-
-type ChatMessageInput = {
-    role: "system" | "user" | "assistant";
-    content: string;
-};
-
-function getMemoryMode(value: unknown): MemoryMode {
-    return value === "full" ? "full" : "stateless";
-}
 
 type ComparisonTarget = {
     provider: SupportedProvider;
@@ -173,8 +163,9 @@ export async function POST(req: NextRequest) {
             );
         }
 
-        const historyMessages = memoryMode === "full"
-            ? await prisma.chatMessage.findMany({
+        const historyRecords: ChatHistoryContextRecord[] = memoryMode === "stateless"
+            ? []
+            : await prisma.chatMessage.findMany({
                   where: {
                       userId: session.user.id,
                       role: {
@@ -187,30 +178,32 @@ export async function POST(req: NextRequest) {
                   select: {
                       role: true,
                       content: true,
+                      provider: true,
+                      model: true,
+                      comparisonGroupId: true,
                   },
-              })
-            : [];
-
-        const messages: ChatMessageInput[] = [
-            {
-                role: "system",
-                content: systemPrompt,
-            },
-            ...historyMessages.map((message) => ({
-                role: message.role as "user" | "assistant",
-                content: message.content,
-            })),
-            {
-                role: "user",
-                content: prompt,
-            },
-        ];
+              });
 
         const results = await Promise.all(
             targets.map(async (target) => {
                 const apiKey = apiKeyByProvider.get(target.provider)!;
 
                 try {
+                    const messages: ChatMessageInput[] = [
+                        {
+                            role: "system",
+                            content: systemPrompt,
+                        },
+                        ...buildScopedHistoryMessages(historyRecords, memoryMode, {
+                            provider: target.provider,
+                            model: target.model,
+                        }),
+                        {
+                            role: "user",
+                            content: prompt,
+                        },
+                    ];
+
                     const result = await runTarget(apiKey, target, messages, controls);
                     return {
                         ...result,
@@ -237,19 +230,17 @@ export async function POST(req: NextRequest) {
 
         if (successfulResults.length) {
             await prisma.$transaction([
-                prisma.chatMessage.create({
-                    data: {
-                        userId: session.user.id,
-                        role: "user",
-                        content: prompt,
-                        runMode: "compare",
-                        memoryMode,
-                        comparisonGroupId,
-                    },
-                }),
-                ...successfulResults.map((entry) =>
-                    prisma.chatMessage.create({
-                        data: {
+                prisma.chatMessage.createMany({
+                    data: [
+                        {
+                            userId: session.user.id,
+                            role: "user",
+                            content: prompt,
+                            runMode: "compare",
+                            memoryMode,
+                            comparisonGroupId,
+                        },
+                        ...successfulResults.map((entry) => ({
                             userId: session.user.id,
                             role: "assistant",
                             content: entry.output,
@@ -263,19 +254,21 @@ export async function POST(req: NextRequest) {
                             completionTokens: entry.usage?.completion_tokens ?? null,
                             totalTokens: entry.usage?.total_tokens ?? null,
                             toolCalls: entry.toolCalls,
+                        })),
+                    ],
+                }),
+                prisma.apiKey.updateMany({
+                    where: {
+                        id: {
+                            in: apiKeyRecords.map((record) => record.id),
                         },
-                    })
-                ),
-                ...apiKeyRecords.map((record) =>
-                    prisma.apiKey.update({
-                        where: { id: record.id },
-                        data: {
-                            lastUsedAt: now,
-                            status: "valid",
-                            verificationError: null,
-                        },
-                    })
-                ),
+                    },
+                    data: {
+                        lastUsedAt: now,
+                        status: "valid",
+                        verificationError: null,
+                    },
+                }),
             ]);
         }
 
@@ -299,6 +292,9 @@ export async function POST(req: NextRequest) {
         );
     }
 }
+
+
+
 
 
 

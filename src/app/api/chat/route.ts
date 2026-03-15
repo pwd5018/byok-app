@@ -3,7 +3,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
 import { decryptApiKey } from "@/lib/crypto";
-import { sanitizeGenerationControls } from "@/lib/chatOptions";
+import { sanitizeGenerationControls } from '@/lib/chatOptions';
+import { buildScopedHistoryMessages, getMemoryMode, type ChatHistoryContextRecord, type ChatMessageInput } from '@/lib/chatMemory';
 import { createGoogleChatCompletion } from "@/lib/google";
 import { createGroqChatCompletion } from "@/lib/groq";
 import { createOpenRouterChatCompletion } from "@/lib/openrouter";
@@ -18,17 +19,6 @@ import {
 
 const systemPrompt =
     "You are a helpful assistant inside a bring-your-own-key multi-provider app.";
-
-type MemoryMode = "full" | "stateless";
-
-type ChatMessageInput = {
-    role: "system" | "user" | "assistant";
-    content: string;
-};
-
-function getMemoryMode(value: unknown): MemoryMode {
-    return value === "full" ? "full" : "stateless";
-}
 
 function isDatabaseAvailabilityError(error: unknown) {
     return (
@@ -97,8 +87,9 @@ export async function POST(req: NextRequest) {
             keyTag: apiKeyRecord.keyTag,
         });
 
-        const historyMessages = memoryMode === "full"
-            ? await prisma.chatMessage.findMany({
+        const historyRecords: ChatHistoryContextRecord[] = memoryMode === "stateless"
+            ? []
+            : await prisma.chatMessage.findMany({
                   where: {
                       userId: session.user.id,
                       role: {
@@ -111,19 +102,21 @@ export async function POST(req: NextRequest) {
                   select: {
                       role: true,
                       content: true,
+                      provider: true,
+                      model: true,
+                      comparisonGroupId: true,
                   },
-              })
-            : [];
+              });
 
         const messages: ChatMessageInput[] = [
             {
                 role: "system",
                 content: systemPrompt,
             },
-            ...historyMessages.map((message) => ({
-                role: message.role as "user" | "assistant",
-                content: message.content,
-            })),
+            ...buildScopedHistoryMessages(historyRecords, memoryMode, {
+                provider,
+                model: selectedModel.id,
+            }),
             {
                 role: "user",
                 content: prompt,
@@ -181,32 +174,33 @@ export async function POST(req: NextRequest) {
                     verificationError: null,
                 },
             }),
-            prisma.chatMessage.create({
-                data: {
-                    userId: session.user.id,
-                    role: "user",
-                    content: prompt,
-                    provider,
-                    runMode: "single",
-                    memoryMode,
-                },
-            }),
-            prisma.chatMessage.create({
-                data: {
-                    userId: session.user.id,
-                    role: "assistant",
-                    content,
-                    provider,
-                    model: completionModel,
-                    runMode: "single",
-                    memoryMode,
-                    promptTokens: completion.usage?.prompt_tokens ?? null,
-                    completionTokens: completion.usage?.completion_tokens ?? null,
-                    totalTokens: completion.usage?.total_tokens ?? null,
-                    toolCalls: Array.isArray(completion?.choices?.[0]?.message?.tool_calls)
-                        ? completion.choices[0].message.tool_calls.length
-                        : null,
-                },
+            prisma.chatMessage.createMany({
+                data: [
+                    {
+                        userId: session.user.id,
+                        role: "user",
+                        content: prompt,
+                        provider,
+                        model: selectedModel.id,
+                        runMode: "single",
+                        memoryMode,
+                    },
+                    {
+                        userId: session.user.id,
+                        role: "assistant",
+                        content,
+                        provider,
+                        model: completionModel,
+                        runMode: "single",
+                        memoryMode,
+                        promptTokens: completion.usage?.prompt_tokens ?? null,
+                        completionTokens: completion.usage?.completion_tokens ?? null,
+                        totalTokens: completion.usage?.total_tokens ?? null,
+                        toolCalls: Array.isArray(completion?.choices?.[0]?.message?.tool_calls)
+                            ? completion.choices[0].message.tool_calls.length
+                            : null,
+                    },
+                ],
             }),
         ]);
 
@@ -232,5 +226,8 @@ export async function POST(req: NextRequest) {
         return NextResponse.json({ error: message }, { status: 500 });
     }
 }
+
+
+
 
 

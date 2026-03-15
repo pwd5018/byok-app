@@ -83,7 +83,7 @@ type ComparisonTarget = {
 };
 
 type FormMode = "single" | "compare";
-type MemoryMode = "full" | "stateless";
+type MemoryMode = "shared" | "provider" | "model" | "stateless";
 
 type ControlFormState = {
     temperature: string;
@@ -335,7 +335,7 @@ export default function ChatForm({ history, configuredProviders }: ChatFormProps
     const [model, setModel] = useState(getDefaultModel(initialProvider));
     const [prompt, setPrompt] = useState("");
     const [controls, setControls] = useState<ControlFormState>(EMPTY_CONTROLS);
-    const [memoryMode, setMemoryMode] = useState<MemoryMode>("full");
+    const [memoryMode, setMemoryMode] = useState<MemoryMode>("shared");
     const [result, setResult] = useState<ChatResult | null>(null);
     const [compareResults, setCompareResults] = useState<CompareResult[]>([]);
     const [showHistoryMetadata, setShowHistoryMetadata] = useState(false);
@@ -650,7 +650,7 @@ export default function ChatForm({ history, configuredProviders }: ChatFormProps
                                         <div>
                                             <p className="text-sm font-semibold text-slate-900">Memory mode</p>
                                             <p className="mt-1 text-xs leading-5 text-slate-500">
-                                                Choose whether the model should see the full saved conversation history or respond statelessly to only the current prompt.
+                                                Shared history is the default. When you need fair experiments, switch to provider or model branches to limit what context each target can see.
                                             </p>
                                         </div>
                                         <div className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-xs text-slate-600">
@@ -658,19 +658,47 @@ export default function ChatForm({ history, configuredProviders }: ChatFormProps
                                         </div>
                                     </div>
 
-                                    <div className="mt-4 grid gap-3 sm:grid-cols-2">
+                                    <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
                                         <button
                                             type="button"
-                                            onClick={() => setMemoryMode("full")}
+                                            onClick={() => setMemoryMode("shared")}
                                             className={`rounded-[22px] border px-4 py-4 text-left transition ${
-                                                memoryMode === "full"
+                                                memoryMode === "shared"
                                                     ? "border-slate-950 bg-slate-950 text-white"
                                                     : "border-slate-200 bg-white text-slate-800 hover:border-slate-300"
                                             }`}
                                         >
-                                            <p className="text-sm font-semibold">Full conversation history</p>
-                                            <p className={`mt-1 text-xs leading-5 ${memoryMode === "full" ? "text-slate-200" : "text-slate-500"}`}>
-                                                Reuses your saved user and assistant messages as context for the next response.
+                                            <p className="text-sm font-semibold">Shared history</p>
+                                            <p className={`mt-1 text-xs leading-5 ${memoryMode === "shared" ? "text-slate-200" : "text-slate-500"}`}>
+                                                Uses the full saved conversation across providers by default, so the workspace behaves like one shared assistant thread.
+                                            </p>
+                                        </button>
+                                        <button
+                                            type="button"
+                                            onClick={() => setMemoryMode("provider")}
+                                            className={`rounded-[22px] border px-4 py-4 text-left transition ${
+                                                memoryMode === "provider"
+                                                    ? "border-slate-950 bg-slate-950 text-white"
+                                                    : "border-slate-200 bg-white text-slate-800 hover:border-slate-300"
+                                            }`}
+                                        >
+                                            <p className="text-sm font-semibold">Provider branch</p>
+                                            <p className={`mt-1 text-xs leading-5 ${memoryMode === "provider" ? "text-slate-200" : "text-slate-500"}`}>
+                                                Filters context to prior messages associated with the same provider, which helps when comparing provider behavior more fairly.
+                                            </p>
+                                        </button>
+                                        <button
+                                            type="button"
+                                            onClick={() => setMemoryMode("model")}
+                                            className={`rounded-[22px] border px-4 py-4 text-left transition ${
+                                                memoryMode === "model"
+                                                    ? "border-slate-950 bg-slate-950 text-white"
+                                                    : "border-slate-200 bg-white text-slate-800 hover:border-slate-300"
+                                            }`}
+                                        >
+                                            <p className="text-sm font-semibold">Model branch</p>
+                                            <p className={`mt-1 text-xs leading-5 ${memoryMode === "model" ? "text-slate-200" : "text-slate-500"}`}>
+                                                Narrows memory to the exact provider/model path, which is useful for controlled model-specific experiments.
                                             </p>
                                         </button>
                                         <button
@@ -1118,6 +1146,7 @@ export default function ChatForm({ history, configuredProviders }: ChatFormProps
         </section>
     );
 }
+
 
 
 
