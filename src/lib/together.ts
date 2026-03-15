@@ -1,33 +1,23 @@
 import type { GenerationControls } from "@/lib/chatOptions";
 import type { ChatMessage } from "@/lib/groq";
 
-type OpenRouterValidationResult =
+type TogetherValidationResult =
     | { ok: true }
     | { ok: false; error: string };
 
-type OpenRouterKeyResponse = {
-    error?: {
-        message?: string;
-    };
-};
-
-type OpenRouterModelListResponse = {
+type TogetherModelListResponse = {
     data?: Array<{
         id?: string;
-        name?: string;
+        display_name?: string;
         context_length?: number;
-        pricing?: {
-            prompt?: string;
-            completion?: string;
-            request?: string;
-        };
+        type?: string;
     }>;
     error?: {
         message?: string;
     };
 };
 
-function parseOpenRouterError(data: unknown, fallback: string) {
+function parseTogetherError(data: unknown, fallback: string) {
     if (
         data &&
         typeof data === "object" &&
@@ -43,23 +33,11 @@ function parseOpenRouterError(data: unknown, fallback: string) {
     return fallback;
 }
 
-function isFreePricing(pricing?: {
-    prompt?: string;
-    completion?: string;
-    request?: string;
-}) {
-    return (
-        pricing?.prompt === "0" &&
-        pricing?.completion === "0" &&
-        (pricing.request === undefined || pricing.request === "0")
-    );
-}
-
-export async function validateOpenRouterApiKey(
+export async function validateTogetherApiKey(
     apiKey: string
-): Promise<OpenRouterValidationResult> {
+): Promise<TogetherValidationResult> {
     try {
-        const res = await fetch("https://openrouter.ai/api/v1/key", {
+        const res = await fetch("https://api.together.xyz/v1/models", {
             method: "GET",
             headers: {
                 Authorization: `Bearer ${apiKey}`,
@@ -68,7 +46,7 @@ export async function validateOpenRouterApiKey(
             cache: "no-store",
         });
 
-        const data = (await res.json().catch(() => null)) as OpenRouterKeyResponse | null;
+        const data = (await res.json().catch(() => null)) as TogetherModelListResponse | null;
 
         if (res.ok) {
             return { ok: true };
@@ -76,19 +54,18 @@ export async function validateOpenRouterApiKey(
 
         return {
             ok: false,
-            error: parseOpenRouterError(data, `OpenRouter returned ${res.status}`),
+            error: parseTogetherError(data, `Together returned ${res.status}`),
         };
     } catch (error) {
         return {
             ok: false,
-            error:
-                error instanceof Error ? error.message : "Failed to reach OpenRouter",
+            error: error instanceof Error ? error.message : "Failed to reach Together",
         };
     }
 }
 
-export async function listOpenRouterModels(apiKey: string) {
-    const res = await fetch("https://openrouter.ai/api/v1/models", {
+export async function listTogetherModels(apiKey: string) {
+    const res = await fetch("https://api.together.xyz/v1/models", {
         method: "GET",
         headers: {
             Authorization: `Bearer ${apiKey}`,
@@ -97,24 +74,25 @@ export async function listOpenRouterModels(apiKey: string) {
         cache: "no-store",
     });
 
-    const data = (await res.json().catch(() => null)) as OpenRouterModelListResponse | null;
+    const data = (await res.json().catch(() => null)) as TogetherModelListResponse | null;
 
     if (!res.ok) {
-        throw new Error(
-            parseOpenRouterError(data, `OpenRouter returned ${res.status}`)
-        );
+        throw new Error(parseTogetherError(data, `Together returned ${res.status}`));
     }
 
     return Array.isArray(data?.data)
         ? data.data
-              .filter((entry) => typeof entry?.id === "string" && isFreePricing(entry.pricing))
+              .filter((entry) => typeof entry?.id === "string" && entry.type !== "image")
               .map((entry) => ({
                   id: entry.id as string,
-                  label: typeof entry.name === "string" ? entry.name : (entry.id as string),
-                  availability: "free" as const,
+                  label:
+                      typeof entry.display_name === "string"
+                          ? entry.display_name
+                          : (entry.id as string),
+                  availability: "unknown" as const,
                   stage: "production" as const,
-                  inputPrice: "$0 / 1M input",
-                  outputPrice: "$0 / 1M output",
+                  inputPrice: "Check Together pricing",
+                  outputPrice: "Check Together pricing",
                   contextWindow:
                       typeof entry.context_length === "number"
                           ? Intl.NumberFormat("en-US", { notation: "compact" }).format(entry.context_length)
@@ -123,19 +101,19 @@ export async function listOpenRouterModels(apiKey: string) {
         : [];
 }
 
-type OpenRouterChatParams = {
+type TogetherChatParams = {
     apiKey: string;
     messages: ChatMessage[];
     model: string;
     controls?: GenerationControls;
 };
 
-export async function createOpenRouterChatCompletion({
+export async function createTogetherChatCompletion({
     apiKey,
     messages,
     model,
     controls = {},
-}: OpenRouterChatParams) {
+}: TogetherChatParams) {
     const body = {
         model,
         messages,
@@ -145,19 +123,13 @@ export async function createOpenRouterChatCompletion({
         frequency_penalty: controls.frequency_penalty,
         presence_penalty: controls.presence_penalty,
         seed: controls.seed,
-        reasoning: controls.reasoning_effort
-            ? { effort: controls.reasoning_effort }
-            : undefined,
-        verbosity: controls.verbosity,
     };
 
-    const res = await fetch("https://openrouter.ai/api/v1/chat/completions", {
+    const res = await fetch("https://api.together.xyz/v1/chat/completions", {
         method: "POST",
         headers: {
             Authorization: `Bearer ${apiKey}`,
             "Content-Type": "application/json",
-            "HTTP-Referer": process.env.NEXTAUTH_URL ?? "http://localhost:3000",
-            "X-Title": "BYOK Provider Workspace",
         },
         body: JSON.stringify(body),
         cache: "no-store",
@@ -167,7 +139,7 @@ export async function createOpenRouterChatCompletion({
 
     if (!res.ok) {
         throw new Error(
-            parseOpenRouterError(data, `OpenRouter request failed with status ${res.status}`)
+            parseTogetherError(data, `Together request failed with status ${res.status}`)
         );
     }
 

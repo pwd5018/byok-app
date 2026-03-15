@@ -3,9 +3,11 @@ import { NextResponse } from "next/server";
 import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
 import { decryptApiKey } from "@/lib/crypto";
+import { listGoogleModels } from "@/lib/google";
 import { listGroqModels } from "@/lib/groq";
 import { mergeProviderModels, isSupportedProvider } from "@/lib/modelCatalog";
 import { listOpenRouterModels } from "@/lib/openrouter";
+import { listTogetherModels } from "@/lib/together";
 
 function isDatabaseAvailabilityError(error: unknown) {
     return (
@@ -57,7 +59,11 @@ export async function GET(
         const liveModels =
             provider === "groq"
                 ? (await listGroqModels(apiKey)).map((id) => ({ id }))
-                : await listOpenRouterModels(apiKey);
+                : provider === "google"
+                    ? await listGoogleModels(apiKey)
+                    : provider === "together"
+                        ? await listTogetherModels(apiKey)
+                        : await listOpenRouterModels(apiKey);
 
         return NextResponse.json({
             provider,

@@ -3,8 +3,11 @@ import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
 import { decryptApiKey } from "@/lib/crypto";
+import { sanitizeGenerationControls } from "@/lib/chatOptions";
+import { createGoogleChatCompletion } from "@/lib/google";
 import { createGroqChatCompletion } from "@/lib/groq";
 import { createOpenRouterChatCompletion } from "@/lib/openrouter";
+import { createTogetherChatCompletion } from "@/lib/together";
 import {
     DEFAULT_CHAT_MODEL,
     DEFAULT_CHAT_PROVIDER,
@@ -15,6 +18,17 @@ import {
 
 const systemPrompt =
     "You are a helpful assistant inside a bring-your-own-key multi-provider app.";
+
+type MemoryMode = "full" | "stateless";
+
+type ChatMessageInput = {
+    role: "system" | "user" | "assistant";
+    content: string;
+};
+
+function getMemoryMode(value: unknown): MemoryMode {
+    return value === "full" ? "full" : "stateless";
+}
 
 function isDatabaseAvailabilityError(error: unknown) {
     return (
@@ -36,6 +50,8 @@ export async function POST(req: NextRequest) {
         const provider =
             typeof body.provider === "string" ? body.provider : DEFAULT_CHAT_PROVIDER;
         const model = typeof body.model === "string" ? body.model : DEFAULT_CHAT_MODEL;
+        const controls = sanitizeGenerationControls(body.controls);
+        const memoryMode = getMemoryMode(body.memoryMode);
 
         if (!prompt) {
             return NextResponse.json(
@@ -81,13 +97,35 @@ export async function POST(req: NextRequest) {
             keyTag: apiKeyRecord.keyTag,
         });
 
-        const messages = [
+        const historyMessages = memoryMode === "full"
+            ? await prisma.chatMessage.findMany({
+                  where: {
+                      userId: session.user.id,
+                      role: {
+                          in: ["user", "assistant"],
+                      },
+                  },
+                  orderBy: {
+                      createdAt: "asc",
+                  },
+                  select: {
+                      role: true,
+                      content: true,
+                  },
+              })
+            : [];
+
+        const messages: ChatMessageInput[] = [
             {
-                role: "system" as const,
+                role: "system",
                 content: systemPrompt,
             },
+            ...historyMessages.map((message) => ({
+                role: message.role as "user" | "assistant",
+                content: message.content,
+            })),
             {
-                role: "user" as const,
+                role: "user",
                 content: prompt,
             },
         ];
@@ -98,12 +136,28 @@ export async function POST(req: NextRequest) {
                       apiKey,
                       model: selectedModel.id,
                       messages,
+                      controls,
                   })
-                : await createOpenRouterChatCompletion({
-                      apiKey,
-                      model: selectedModel.id,
-                      messages,
-                  });
+                : provider === "google"
+                    ? await createGoogleChatCompletion({
+                          apiKey,
+                          model: selectedModel.id,
+                          messages,
+                          controls,
+                      })
+                    : provider === "together"
+                        ? await createTogetherChatCompletion({
+                              apiKey,
+                              model: selectedModel.id,
+                              messages,
+                              controls,
+                          })
+                        : await createOpenRouterChatCompletion({
+                              apiKey,
+                              model: selectedModel.id,
+                              messages,
+                              controls,
+                          });
 
         const content = completion?.choices?.[0]?.message?.content;
 
@@ -148,6 +202,7 @@ export async function POST(req: NextRequest) {
             output: content,
             model: completionModel,
             usage: completion.usage ?? null,
+            memoryMode,
         });
     } catch (error) {
         if (isDatabaseAvailabilityError(error)) {
@@ -165,3 +220,4 @@ export async function POST(req: NextRequest) {
         return NextResponse.json({ error: message }, { status: 500 });
     }
 }
+

@@ -1,4 +1,4 @@
-export type SupportedProvider = "groq" | "openrouter";
+export type SupportedProvider = "groq" | "openrouter" | "google" | "together";
 export type ModelAvailability = "free" | "paid" | "unknown";
 
 export type ProviderDefinition = {
@@ -41,6 +41,22 @@ export const PROVIDERS: ProviderDefinition[] = [
         keyPlaceholder: "sk-or-v1-...",
         signupUrl: "https://openrouter.ai/settings/keys",
         freeAccessNote: "Free API keys and free models are available.",
+    },
+    {
+        id: "google",
+        label: "Google AI Studio",
+        keyLabel: "Google Gemini API key",
+        keyPlaceholder: "AIza...",
+        signupUrl: "https://aistudio.google.com/apikey",
+        freeAccessNote: "Free AI Studio API keys and Gemini free-tier models are available.",
+    },
+    {
+        id: "together",
+        label: "Together AI",
+        keyLabel: "Together API key",
+        keyPlaceholder: "your-together-api-key",
+        signupUrl: "https://api.together.ai/settings/api-keys",
+        freeAccessNote: "Free API keys are available and new accounts include starter credits.",
     },
 ];
 
@@ -147,6 +163,70 @@ const MODEL_CATALOG: Record<SupportedProvider, CatalogModelOption[]> = {
             inputPrice: "$0 / 1M input",
             outputPrice: "$0 / 1M output",
             contextWindow: "128K",
+        },
+    ],
+    google: [
+        {
+            id: "gemini-2.5-flash",
+            label: "Gemini 2.5 Flash",
+            provider: "google",
+            availability: "free",
+            stage: "production",
+            inputPrice: "Free tier available",
+            outputPrice: "Free tier available",
+            contextWindow: "1M",
+        },
+        {
+            id: "gemini-2.5-flash-lite",
+            label: "Gemini 2.5 Flash-Lite",
+            provider: "google",
+            availability: "free",
+            stage: "production",
+            inputPrice: "Free tier available",
+            outputPrice: "Free tier available",
+            contextWindow: "1M",
+        },
+        {
+            id: "gemini-2.5-flash-lite-preview-09-2025",
+            label: "Gemini 2.5 Flash-Lite Preview",
+            provider: "google",
+            availability: "free",
+            stage: "preview",
+            inputPrice: "Free tier available",
+            outputPrice: "Free tier available",
+            contextWindow: "1M",
+        },
+    ],
+    together: [
+        {
+            id: "meta-llama/Meta-Llama-3.1-8B-Instruct-Turbo",
+            label: "Llama 3.1 8B Instruct Turbo",
+            provider: "together",
+            availability: "unknown",
+            stage: "production",
+            inputPrice: "Check Together pricing",
+            outputPrice: "Check Together pricing",
+            contextWindow: "131K",
+        },
+        {
+            id: "meta-llama/Meta-Llama-3.1-70B-Instruct-Turbo",
+            label: "Llama 3.1 70B Instruct Turbo",
+            provider: "together",
+            availability: "unknown",
+            stage: "production",
+            inputPrice: "Check Together pricing",
+            outputPrice: "Check Together pricing",
+            contextWindow: "131K",
+        },
+        {
+            id: "Qwen/Qwen2.5-72B-Instruct-Turbo",
+            label: "Qwen 2.5 72B Instruct Turbo",
+            provider: "together",
+            availability: "unknown",
+            stage: "production",
+            inputPrice: "Check Together pricing",
+            outputPrice: "Check Together pricing",
+            contextWindow: "131K",
         },
     ],
 };

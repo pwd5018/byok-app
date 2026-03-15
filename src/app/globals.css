@@ -114,3 +114,25 @@ textarea {
 .text-balance {
   text-wrap: balance;
 }
+
+.markdown-body {
+  min-width: 0;
+  max-width: 100%;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+.markdown-body > * {
+  min-width: 0;
+  max-width: 100%;
+}
+
+.markdown-body img,
+.markdown-body video,
+.markdown-body svg,
+.markdown-body canvas,
+.markdown-body iframe {
+  display: block;
+  max-width: 100%;
+  height: auto;
+}

@@ -2,8 +2,10 @@ import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
 import { encryptApiKey, maskApiKey } from "@/lib/crypto";
+import { validateGoogleApiKey } from "@/lib/google";
 import { validateGroqApiKey } from "@/lib/groq";
 import { validateOpenRouterApiKey } from "@/lib/openrouter";
+import { validateTogetherApiKey } from "@/lib/together";
 import {
     getProviderDefinition,
     isSupportedProvider,
@@ -13,6 +15,14 @@ import {
 async function validateApiKey(provider: SupportedProvider, apiKey: string) {
     if (provider === "groq") {
         return validateGroqApiKey(apiKey);
+    }
+
+    if (provider === "google") {
+        return validateGoogleApiKey(apiKey);
+    }
+
+    if (provider === "together") {
+        return validateTogetherApiKey(apiKey);
     }
 
     return validateOpenRouterApiKey(apiKey);

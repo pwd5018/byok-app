@@ -65,7 +65,6 @@ export default async function DashboardPage() {
                 orderBy: {
                     createdAt: "asc",
                 },
-                take: 20,
             }),
         ]);
     } catch (error) {
@@ -230,8 +229,9 @@ export default async function DashboardPage() {
                     </aside>
                 </section>
 
-                {configuredProviders.length ? <ChatForm history={chatHistory} /> : null}
+                {configuredProviders.length ? <ChatForm history={chatHistory} configuredProviders={configuredProviders.map((provider) => provider.id)} /> : null}
             </div>
         </main>
     );
 }
+

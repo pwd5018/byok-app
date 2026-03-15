@@ -1,3 +1,5 @@
+import type { GenerationControls } from "@/lib/chatOptions";
+
 type GroqValidationResult =
     | { ok: true }
     | { ok: false; error: string };
@@ -86,29 +88,35 @@ type GroqChatParams = {
     apiKey: string;
     messages: ChatMessage[];
     model?: string;
-    temperature?: number;
-    max_tokens?: number;
+    controls?: GenerationControls;
 };
 
 export async function createGroqChatCompletion({
-                                                   apiKey,
-                                                   messages,
-                                                   model = process.env.GROQ_MODEL || "openai/gpt-oss-20b",
-                                                   temperature = 0.7,
-                                                   max_tokens = 512,
-                                               }: GroqChatParams) {
+    apiKey,
+    messages,
+    model = process.env.GROQ_MODEL || "openai/gpt-oss-20b",
+    controls = {},
+}: GroqChatParams) {
+    const body = {
+        model,
+        messages,
+        temperature: controls.temperature ?? 0.7,
+        top_p: controls.top_p,
+        max_tokens: controls.max_tokens ?? 512,
+        frequency_penalty: controls.frequency_penalty,
+        presence_penalty: controls.presence_penalty,
+        seed: controls.seed,
+        reasoning_effort: controls.reasoning_effort,
+        verbosity: controls.verbosity,
+    };
+
     const res = await fetch("https://api.groq.com/openai/v1/chat/completions", {
         method: "POST",
         headers: {
             Authorization: `Bearer ${apiKey}`,
             "Content-Type": "application/json",
         },
-        body: JSON.stringify({
-            model,
-            messages,
-            temperature,
-            max_tokens,
-        }),
+        body: JSON.stringify(body),
         cache: "no-store",
     });
 

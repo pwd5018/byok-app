@@ -26,7 +26,7 @@ const markdownComponents = {
     ol: ({ children }: { children?: React.ReactNode }) => <ol className="mt-4 list-decimal space-y-2 pl-6">{children}</ol>,
     li: ({ children }: { children?: React.ReactNode }) => <li className="pl-1">{children}</li>,
     blockquote: ({ children }: { children?: React.ReactNode }) => (
-        <blockquote className="mt-4 rounded-r-2xl border-l-4 border-amber-300 bg-amber-50/70 px-4 py-3 italic text-slate-700">
+        <blockquote className="mt-4 overflow-x-auto rounded-r-2xl border-l-4 border-amber-300 bg-amber-50/70 px-4 py-3 italic text-slate-700">
             {children}
         </blockquote>
     ),
@@ -46,41 +46,44 @@ const markdownComponents = {
 
         if (!match) {
             return (
-                <code className="rounded-md bg-slate-100 px-1.5 py-0.5 font-mono text-[0.95em] text-slate-900">
+                <code className="rounded-md bg-slate-100 px-1.5 py-0.5 font-mono text-[0.95em] text-slate-900 break-all">
                     {children}
                 </code>
             );
         }
 
         return (
-            <SyntaxHighlighter
-                {...props}
-                PreTag="div"
-                language={match[1]}
-                style={oneLight}
-                customStyle={{
-                    marginTop: "1rem",
-                    marginBottom: 0,
-                    borderRadius: "20px",
-                    border: "1px solid rgba(148, 163, 184, 0.28)",
-                    padding: "1rem",
-                    fontSize: "0.9rem",
-                    lineHeight: "1.7",
-                    background: "rgba(248, 250, 252, 0.95)",
-                }}
-                codeTagProps={{
-                    style: {
-                        fontFamily: "var(--font-code)",
-                    },
-                }}
-            >
-                {value}
-            </SyntaxHighlighter>
+            <div className="mt-4 w-full overflow-x-auto">
+                <SyntaxHighlighter
+                    {...props}
+                    PreTag="div"
+                    language={match[1]}
+                    style={oneLight}
+                    customStyle={{
+                        marginTop: 0,
+                        marginBottom: 0,
+                        borderRadius: "20px",
+                        border: "1px solid rgba(148, 163, 184, 0.28)",
+                        padding: "1rem",
+                        fontSize: "0.9rem",
+                        lineHeight: "1.7",
+                        background: "rgba(248, 250, 252, 0.95)",
+                        minWidth: 0,
+                    }}
+                    codeTagProps={{
+                        style: {
+                            fontFamily: "var(--font-code)",
+                        },
+                    }}
+                >
+                    {value}
+                </SyntaxHighlighter>
+            </div>
         );
     },
     pre: ({ children }: { children?: React.ReactNode }) => <>{children}</>,
     table: ({ children }: { children?: React.ReactNode }) => (
-        <div className="mt-4 overflow-x-auto">
+        <div className="mt-4 w-full overflow-x-auto">
             <table className="min-w-full border-collapse overflow-hidden rounded-2xl border border-slate-200 bg-white">
                 {children}
             </table>
@@ -96,7 +99,7 @@ const MarkdownMessage = memo(function MarkdownMessage({ content, className = "" 
     const normalizedContent = normalizeContent(content);
 
     return (
-        <div className={`markdown-body ${className}`.trim()}>
+        <div className={`markdown-body min-w-0 max-w-full overflow-x-hidden ${className}`.trim()}>
             <ReactMarkdown remarkPlugins={[remarkGfm]} components={markdownComponents}>
                 {normalizedContent}
             </ReactMarkdown>
