@@ -1,12 +1,12 @@
-import { randomUUID } from 'node:crypto';
-import { performance } from 'node:perf_hooks';
+import { randomUUID } from "node:crypto";
+import { performance } from "node:perf_hooks";
 import { Prisma } from "@prisma/client";
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
 import { decryptApiKey } from "@/lib/crypto";
-import { sanitizeGenerationControls } from '@/lib/chatOptions';
-import { buildScopedHistoryMessages, getMemoryMode, type ChatHistoryContextRecord, type ChatMessageInput } from '@/lib/chatMemory';
+import { sanitizeGenerationControls } from "@/lib/chatOptions";
+import { buildScopedHistoryMessages, getMemoryMode, type ChatHistoryContextRecord, type ChatMessageInput } from "@/lib/chatMemory";
 import { createGoogleChatCompletion } from "@/lib/google";
 import { createGroqChatCompletion } from "@/lib/groq";
 import { createOpenRouterChatCompletion } from "@/lib/openrouter";
@@ -18,7 +18,7 @@ import {
     type SupportedProvider,
 } from "@/lib/modelCatalog";
 
-const systemPrompt =
+const DEFAULT_SYSTEM_PROMPT =
     "You are a helpful assistant inside a bring-your-own-key multi-provider app.";
 
 type ComparisonTarget = {
@@ -34,7 +34,6 @@ function isDatabaseAvailabilityError(error: unknown) {
 }
 
 async function runTarget(apiKey: string, target: ComparisonTarget, messages: ChatMessageInput[], controls: ReturnType<typeof sanitizeGenerationControls>) {
-
     const startedAt = performance.now();
 
     const completion =
@@ -98,7 +97,12 @@ export async function POST(req: NextRequest) {
         const prompt = typeof body.prompt === "string" ? body.prompt.trim() : "";
         const controls = sanitizeGenerationControls(body.controls);
         const memoryMode = getMemoryMode(body.memoryMode);
-        const rawTargets = Array.isArray(body.targets) ? body.targets : [];
+        const rawTargets = Array.isArray(body.targets) ? (body.targets as unknown[]) : [];
+        const systemPrompt = typeof body.systemPrompt === "string" && body.systemPrompt.trim()
+            ? body.systemPrompt.trim()
+            : DEFAULT_SYSTEM_PROMPT;
+        const developerPrompt = typeof body.developerPrompt === "string" ? body.developerPrompt.trim() : "";
+        const combinedSystemPrompt = developerPrompt ? `${systemPrompt}\n\nDeveloper instructions:\n${developerPrompt}` : systemPrompt;
 
         if (!prompt) {
             return NextResponse.json({ error: "Prompt is required" }, { status: 400 });
@@ -192,7 +196,7 @@ export async function POST(req: NextRequest) {
                     const messages: ChatMessageInput[] = [
                         {
                             role: "system",
-                            content: systemPrompt,
+                            content: combinedSystemPrompt,
                         },
                         ...buildScopedHistoryMessages(historyRecords, memoryMode, {
                             provider: target.provider,
@@ -227,20 +231,23 @@ export async function POST(req: NextRequest) {
         const now = new Date();
         const comparisonGroupId = randomUUID();
         const successfulResults = results.filter((entry) => entry.status === "success");
+        let savedResultsByKey = new Map<string, string>();
 
         if (successfulResults.length) {
-            await prisma.$transaction([
-                prisma.chatMessage.createMany({
-                    data: [
-                        {
-                            userId: session.user.id,
-                            role: "user",
-                            content: prompt,
-                            runMode: "compare",
-                            memoryMode,
-                            comparisonGroupId,
-                        },
-                        ...successfulResults.map((entry) => ({
+            const transactionSteps = [
+                prisma.chatMessage.create({
+                    data: {
+                        userId: session.user.id,
+                        role: "user",
+                        content: prompt,
+                        runMode: "compare",
+                        memoryMode,
+                        comparisonGroupId,
+                    },
+                }),
+                ...successfulResults.map((entry) =>
+                    prisma.chatMessage.create({
+                        data: {
                             userId: session.user.id,
                             role: "assistant",
                             content: entry.output,
@@ -254,9 +261,9 @@ export async function POST(req: NextRequest) {
                             completionTokens: entry.usage?.completion_tokens ?? null,
                             totalTokens: entry.usage?.total_tokens ?? null,
                             toolCalls: entry.toolCalls,
-                        })),
-                    ],
-                }),
+                        },
+                    })
+                ),
                 prisma.apiKey.updateMany({
                     where: {
                         id: {
@@ -269,10 +276,25 @@ export async function POST(req: NextRequest) {
                         verificationError: null,
                     },
                 }),
-            ]);
+            ];
+
+            const transactionResults = await prisma.$transaction(transactionSteps);
+            const savedAssistantMessages = transactionResults.slice(1, 1 + successfulResults.length) as Array<{ id: string }>;
+            savedResultsByKey = new Map(
+                successfulResults.map((entry, index) => [`${entry.provider}:${entry.model}`, savedAssistantMessages[index]?.id ?? ""])
+            );
         }
 
-        return NextResponse.json({ results, memoryMode });
+        return NextResponse.json({
+            results: results.map((entry) => ({
+                ...entry,
+                messageId:
+                    entry.status === "success"
+                        ? savedResultsByKey.get(`${entry.provider}:${entry.model}`) ?? null
+                        : null,
+            })),
+            memoryMode,
+        });
     } catch (error) {
         if (isDatabaseAvailabilityError(error)) {
             return NextResponse.json(
@@ -292,9 +314,5 @@ export async function POST(req: NextRequest) {
         );
     }
 }
-
-
-
-
 
 

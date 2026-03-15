@@ -7,13 +7,15 @@ datasource db {
 }
 
 model User {
-  id           String   @id @default(cuid())
-  email        String   @unique
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
-  passwordHash String
-  apiKeys      ApiKey[]
-  chatMessages ChatMessage[]
+  id              String           @id @default(cuid())
+  email           String           @unique
+  createdAt       DateTime         @default(now())
+  updatedAt       DateTime         @updatedAt
+  passwordHash    String
+  apiKeys         ApiKey[]
+  chatMessages    ChatMessage[]
+  promptVersions  PromptVersion[]
+  responseRatings ResponseRating[]
 }
 
 model ApiKey {
@@ -36,7 +38,7 @@ model ApiKey {
 }
 
 model ChatMessage {
-  id                String   @id @default(cuid())
+  id                String          @id @default(cuid())
   userId            String
   role              String
   content           String
@@ -50,13 +52,41 @@ model ChatMessage {
   completionTokens  Int?
   totalTokens       Int?
   toolCalls         Int?
-  createdAt         DateTime @default(now())
-
-  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt         DateTime        @default(now())
+  user              User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  responseRating    ResponseRating?
 
   @@index([userId, createdAt])
   @@index([userId, comparisonGroupId])
 }
 
+model PromptVersion {
+  id        String   @id @default(cuid())
+  userId    String
+  name      String
+  type      String
+  content   String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 
+  @@index([userId, type, updatedAt])
+}
 
+model ResponseRating {
+  id                   String      @id @default(cuid())
+  userId               String
+  chatMessageId        String      @unique
+  correctness          Int?
+  usefulness           Int?
+  style                Int?
+  instructionFollowing Int?
+  safety               Int?
+  conciseness          Int?
+  createdAt            DateTime    @default(now())
+  updatedAt            DateTime    @updatedAt
+  user                 User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  chatMessage          ChatMessage @relation(fields: [chatMessageId], references: [id], onDelete: Cascade)
+
+  @@index([userId, createdAt])
+}

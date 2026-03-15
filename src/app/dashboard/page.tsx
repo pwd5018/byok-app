@@ -36,13 +36,7 @@ export default async function DashboardPage() {
     }
 
     let existingKeys: Awaited<ReturnType<typeof prisma.apiKey.findMany>> = [];
-    let chatHistory: {
-        id: string;
-        role: string;
-        content: string;
-        model: string | null;
-        createdAt: Date;
-    }[] = [];
+    let chatHistory: Awaited<ReturnType<typeof prisma.chatMessage.findMany>> = [];
     let databaseError = false;
 
     try {
@@ -80,8 +74,8 @@ export default async function DashboardPage() {
     );
 
     return (
-        <main className="app-shell min-h-screen px-6 py-8 sm:px-8 lg:px-10">
-            <div className="mx-auto max-w-6xl space-y-6">
+        <main className="app-shell min-h-screen px-6 py-8 sm:px-8 lg:px-10 xl:h-screen xl:overflow-hidden">
+            <div className="mx-auto flex max-w-[1720px] flex-col gap-6 xl:h-full xl:min-h-0">
                 <section className="glass-panel rounded-[32px] p-6 sm:p-8">
                     <div className="flex flex-col gap-6 lg:flex-row lg:items-end lg:justify-between">
                         <div className="space-y-4">
@@ -119,88 +113,89 @@ export default async function DashboardPage() {
                     </section>
                 ) : null}
 
-                <section className="grid gap-6 lg:grid-cols-[1.05fr_0.95fr]">
-                    <div className="space-y-4">
-                        {PROVIDERS.map((provider) => {
-                            const existingKey = keyByProvider.get(provider.id) ?? null;
+                <div className="grid gap-6 xl:min-h-0 xl:flex-1 xl:grid-cols-[360px_minmax(0,1fr)] xl:items-stretch">
+                    <aside className="space-y-6 xl:min-h-0 xl:overflow-y-auto xl:pr-2 [scrollbar-gutter:stable]">
+                        <div className="glass-panel rounded-[30px] p-6 sm:p-7">
+                            <p className="eyebrow">Providers</p>
+                            <h2 className="display-font text-2xl font-semibold text-slate-950">Keys and access</h2>
+                            <p className="mt-2 text-sm leading-6 text-slate-600">Configure providers in the left rail while keeping the prompt workspace visible on the right.</p>
+                        </div>
 
-                            return (
-                                <div key={provider.id} className="glass-panel rounded-[26px] p-5 sm:p-6">
-                                    <div className="flex flex-col gap-4">
-                                        <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-                                            <div>
-                                                <div className="flex flex-wrap items-center gap-3">
-                                                    <h2 className="display-font text-xl font-semibold text-slate-950">{provider.label}</h2>
-                                                    <span className={`inline-flex rounded-full border px-3 py-1 text-xs font-semibold ${getStatusTone(existingKey?.status ?? null)}`}>
-                                                        {existingKey?.status ? existingKey.status : "Not configured"}
-                                                    </span>
-                                                </div>
-                                                <p className="mt-2 text-sm leading-6 text-slate-600">
-                                                    {provider.freeAccessNote}
-                                                </p>
-                                            </div>
-                                            <a
-                                                href={provider.signupUrl}
-                                                target="_blank"
-                                                rel="noreferrer"
-                                                className="text-sm font-semibold text-slate-900 underline decoration-slate-300 underline-offset-4"
-                                            >
-                                                Get a {provider.label} key
-                                            </a>
-                                        </div>
+                        <div className="space-y-4">
+                            {PROVIDERS.map((provider) => {
+                                const existingKey = keyByProvider.get(provider.id) ?? null;
 
-                                        {existingKey ? (
-                                            <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-                                                <div className="rounded-2xl border border-slate-200/80 bg-white/75 px-3 py-2.5">
-                                                    <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-500">Saved key</p>
-                                                    <p className="mt-1 break-all font-mono text-xs text-slate-900">{existingKey.maskedKey}</p>
+                                return (
+                                    <div key={provider.id} className="glass-panel rounded-[26px] p-5 sm:p-6">
+                                        <div className="flex flex-col gap-4">
+                                            <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                                                <div>
+                                                    <div className="flex flex-wrap items-center gap-3">
+                                                        <h2 className="display-font text-xl font-semibold text-slate-950">{provider.label}</h2>
+                                                        <span className={`inline-flex rounded-full border px-3 py-1 text-xs font-semibold ${getStatusTone(existingKey?.status ?? null)}`}>
+                                                            {existingKey?.status ? existingKey.status : "Not configured"}
+                                                        </span>
+                                                    </div>
+                                                    <p className="mt-2 text-sm leading-6 text-slate-600">
+                                                        {provider.freeAccessNote}
+                                                    </p>
                                                 </div>
-                                                <div className="rounded-2xl border border-slate-200/80 bg-white/75 px-3 py-2.5">
-                                                    <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-500">Verified</p>
-                                                    <p className="mt-1 text-xs text-slate-900">{formatDate(existingKey.lastVerifiedAt)}</p>
-                                                </div>
-                                                <div className="rounded-2xl border border-slate-200/80 bg-white/75 px-3 py-2.5">
-                                                    <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-500">Last used</p>
-                                                    <p className="mt-1 text-xs text-slate-900">{formatDate(existingKey.lastUsedAt)}</p>
-                                                </div>
-                                                <div className="rounded-2xl border border-slate-200/80 bg-white/75 px-3 py-2.5">
-                                                    <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-500">Provider</p>
-                                                    <p className="mt-1 text-xs text-slate-900">{provider.label}</p>
-                                                </div>
+                                                <a
+                                                    href={provider.signupUrl}
+                                                    target="_blank"
+                                                    rel="noreferrer"
+                                                    className="text-sm font-semibold text-slate-900 underline decoration-slate-300 underline-offset-4"
+                                                >
+                                                    Get a {provider.label} key
+                                                </a>
                                             </div>
-                                        ) : (
-                                            <div className="rounded-[22px] border border-dashed border-slate-300 bg-white/55 px-4 py-4 text-sm leading-6 text-slate-600">
-                                                No {provider.label} API key is saved yet. Add one below to unlock verification and chat for this provider.
-                                            </div>
-                                        )}
 
-                                        {existingKey?.verificationError ? (
-                                            <div className="rounded-[20px] border border-rose-200 bg-rose-50 px-4 py-3 text-sm leading-6 text-rose-700">
-                                                Last verification error: {existingKey.verificationError}
-                                            </div>
-                                        ) : null}
-
-                                        <div className="rounded-[24px] border border-slate-200/80 bg-white/70 p-4">
                                             {existingKey ? (
-                                                <div className="flex flex-wrap items-start gap-3">
-                                                    <VerifyApiKeyButton provider={provider.id} />
-                                                    <DeleteApiKeyButton provider={provider.id} />
+                                                <div className="grid gap-3 sm:grid-cols-2">
+                                                    <div className="rounded-2xl border border-slate-200/80 bg-white/75 px-3 py-2.5 sm:col-span-2">
+                                                        <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-500">Saved key</p>
+                                                        <p className="mt-1 break-all font-mono text-xs text-slate-900">{existingKey.maskedKey}</p>
+                                                    </div>
+                                                    <div className="rounded-2xl border border-slate-200/80 bg-white/75 px-3 py-2.5">
+                                                        <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-500">Verified</p>
+                                                        <p className="mt-1 text-xs text-slate-900">{formatDate(existingKey.lastVerifiedAt)}</p>
+                                                    </div>
+                                                    <div className="rounded-2xl border border-slate-200/80 bg-white/75 px-3 py-2.5">
+                                                        <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-500">Last used</p>
+                                                        <p className="mt-1 text-xs text-slate-900">{formatDate(existingKey.lastUsedAt)}</p>
+                                                    </div>
                                                 </div>
                                             ) : (
-                                                <SaveApiKeyForm provider={provider.id} />
+                                                <div className="rounded-[22px] border border-dashed border-slate-300 bg-white/55 px-4 py-4 text-sm leading-6 text-slate-600">
+                                                    No {provider.label} API key is saved yet. Add one below to unlock verification and chat for this provider.
+                                                </div>
                                             )}
+
+                                            {existingKey?.verificationError ? (
+                                                <div className="rounded-[20px] border border-rose-200 bg-rose-50 px-4 py-3 text-sm leading-6 text-rose-700">
+                                                    Last verification error: {existingKey.verificationError}
+                                                </div>
+                                            ) : null}
+
+                                            <div className="rounded-[24px] border border-slate-200/80 bg-white/70 p-4">
+                                                {existingKey ? (
+                                                    <div className="flex flex-wrap items-start gap-3">
+                                                        <VerifyApiKeyButton provider={provider.id} />
+                                                        <DeleteApiKeyButton provider={provider.id} />
+                                                    </div>
+                                                ) : (
+                                                    <SaveApiKeyForm provider={provider.id} />
+                                                )}
+                                            </div>
                                         </div>
                                     </div>
-                                </div>
-                            );
-                        })}
-                    </div>
+                                );
+                            })}
+                        </div>
 
-                    <aside className="space-y-6">
                         <div className="glass-panel rounded-[30px] p-6 sm:p-7">
                             <p className="eyebrow">Quick checks</p>
                             <h2 className="display-font text-2xl font-semibold text-slate-950">Workspace health</h2>
-
                             <div className="mt-5 grid gap-4">
                                 <div className="section-card p-4">
                                     <p className="text-sm font-semibold text-slate-900">Authentication</p>
@@ -216,23 +211,28 @@ export default async function DashboardPage() {
                                 </div>
                             </div>
                         </div>
-
-                        <div className="glass-panel rounded-[30px] p-6 sm:p-7">
-                            <p className="eyebrow">What to do next</p>
-                            <h2 className="display-font text-2xl font-semibold text-slate-950">Suggested flow</h2>
-                            <ol className="mt-5 space-y-3 text-sm leading-6 text-slate-600">
-                                <li className="rounded-2xl border border-slate-200/80 bg-white/70 px-4 py-3">1. Save one or more provider keys for your account.</li>
-                                <li className="rounded-2xl border border-slate-200/80 bg-white/70 px-4 py-3">2. Verify each credential and confirm the saved status.</li>
-                                <li className="rounded-2xl border border-slate-200/80 bg-white/70 px-4 py-3">3. Pick a provider in the playground and send a test prompt.</li>
-                            </ol>
-                        </div>
                     </aside>
-                </section>
 
-                {configuredProviders.length ? <ChatForm history={chatHistory} configuredProviders={configuredProviders.map((provider) => provider.id)} /> : null}
+                    <section className="xl:min-h-0 xl:overflow-hidden">
+                        {configuredProviders.length ? (
+                            <ChatForm history={chatHistory} configuredProviders={configuredProviders.map((provider) => provider.id)} />
+                        ) : (
+                            <div className="glass-panel flex h-full min-h-[24rem] flex-col justify-center rounded-[32px] p-8 text-center xl:min-h-0">
+                                <p className="eyebrow">Prompt playground</p>
+                                <h2 className="display-font mt-2 text-3xl font-semibold text-slate-950">Save a provider key to unlock the workspace</h2>
+                                <p className="mx-auto mt-3 max-w-2xl text-sm leading-7 text-slate-600 sm:text-base">
+                                    Add at least one provider in the left rail. As soon as a key is saved, the chat, comparison, rating, and diff workflow will appear here without leaving the dashboard.
+                                </p>
+                            </div>
+                        )}
+                    </section>
+                </div>
             </div>
         </main>
     );
 }
+
+
+
 
 

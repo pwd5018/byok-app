@@ -9,9 +9,12 @@ Users can:
 - save one encrypted API key per provider
 - verify saved keys from the dashboard
 - browse live model lists when a provider supports it
+- create and save multiple system, developer, user, and template prompt versions
 - send a prompt to a single model
 - run the same prompt across multiple models at once
-- compare latency, token usage, formatting, and instruction-following behavior
+- rate outputs on correctness, usefulness, style, instruction following, safety, and conciseness
+- compare latency, token usage, formatting, instruction-following behavior, and saved rating summaries
+- inspect text diffs, structured JSON diffs, markdown-vs-raw output, and response metric deltas
 - review saved chat history and purge it when needed
 
 ## Supported Providers
@@ -44,16 +47,41 @@ Each provider can have one saved key per user account.
 
 ### Chat Playground
 
+- saved prompt libraries for system, developer, user, and reusable template variants
 - single-model prompt mode
 - multi-model comparison mode
 - provider picker filtered to saved keys
 - live model fetching with catalog fallback
 - markdown rendering for model responses
 - syntax-highlighted code blocks
+- per-response scoring across six evaluation dimensions
+- cross-model summary cards built from saved ratings
 
 ### Comparison Controls
 
-The comparison composer exposes shared generation controls so the same settings can be applied across runs:
+The comparison composer exposes shared generation controls so the same settings can be applied across runs.
+
+### Output Review and Diffing
+
+After a run, users can:
+
+- score responses on correctness, usefulness, style, instruction following, safety, and conciseness
+- view a simple model summary based on saved ratings
+- inspect text diffs between two model outputs
+- compare structured JSON when both responses are valid JSON
+- inspect rendered markdown beside raw response text
+- compare total tokens and latency deltas
+
+### Prompt Versioning
+
+Users can save multiple prompt variants and reload them directly from the playground:
+
+- system prompts
+- developer prompts
+- user prompts
+- reusable templates that can be inserted into new runs
+
+The comparison composer also exposes shared generation controls so the same settings can be applied across runs:
 
 - `temperature`
 - `top_p`
@@ -143,6 +171,7 @@ npm run dev
 npm run build
 npm run start
 npm run lint
+npm test
 ```
 
 ## Database Model
@@ -163,8 +192,20 @@ The main tables are:
   - user ID
   - role
   - content
-  - optional model name
+  - optional provider and model metadata
+  - comparison, latency, token, and tool-call metadata
   - created timestamp
+- `PromptVersion`
+  - user ID
+  - saved prompt type (`system`, `developer`, `user`, `template`)
+  - display name
+  - prompt content
+  - timestamps
+- `ResponseRating`
+  - user ID
+  - assistant message ID
+  - six evaluation scores
+  - timestamps
 
 Each user can store one API key per provider, and can have many chat messages.
 
@@ -190,9 +231,19 @@ Each user can store one API key per provider, and can have many chat messages.
 - `GET /api/models/[provider]`
   Loads live models for a provider using the saved key when available, with catalog fallback in the UI.
 - `POST /api/chat`
-  Runs a single-model chat request.
+  Runs a single-model chat request and returns the saved assistant message ID for rating.
 - `POST /api/chat/compare`
-  Runs the same prompt across multiple selected targets.
+  Runs the same prompt across multiple selected targets and returns saved assistant message IDs for successful responses.
+- `GET /api/prompts`
+  Loads saved prompt versions for the signed-in user.
+- `POST /api/prompts`
+  Saves a new system, developer, user, or template prompt version.
+- `DELETE /api/prompts?id=...`
+  Deletes a saved prompt version.
+- `GET /api/chat/ratings`
+  Returns the current cross-model evaluation summary.
+- `POST /api/chat/ratings`
+  Saves or updates scores for a saved assistant response.
 - `DELETE /api/chat/history`
   Purges all saved chat history for the signed-in user.
 
@@ -255,3 +306,4 @@ prisma/
 - support conversation context replay for multi-turn chats
 - expand comparison metrics and export/share flows
 - add rate limiting and stronger server-side validation around public endpoints
+

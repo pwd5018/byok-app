@@ -5,6 +5,8 @@ import { memo, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import MarkdownMessage from '@/components/chat/MarkdownMessage';
 import PurgeChatHistoryButton from '@/components/chat/PurgeChatHistoryButton';
+import ComparisonDiffExplorer from "@/components/chat/ComparisonDiffExplorer";
+import ResponseRatingPanel from "@/components/chat/ResponseRatingPanel";
 import {
     DEFAULT_CHAT_PROVIDER,
     PROVIDERS,
@@ -18,10 +20,20 @@ import {
     type SupportedProvider,
 } from "@/lib/modelCatalog";
 import type { GenerationControls, ReasoningEffort, VerbosityLevel } from "@/lib/chatOptions";
+import { PROMPT_VERSION_TYPES, type PromptVersionType } from "@/lib/promptVersions";
+import {
+    RESPONSE_RATING_FIELDS,
+    type ModelRatingSummary,
+    type ResponseRatingField,
+    type ResponseScores,
+} from "@/lib/responseRatings";
 
 type ChatResult = {
     output?: string;
     model?: string;
+    provider?: SupportedProvider;
+    latencyMs?: number | null;
+    messageId?: string | null;
     usage?: {
         prompt_tokens?: number;
         completion_tokens?: number;
@@ -37,6 +49,7 @@ type CompareResult = {
     output?: string;
     error?: string;
     latencyMs: number | null;
+    messageId?: string | null;
     usage?: {
         prompt_tokens?: number;
         completion_tokens?: number;
@@ -59,7 +72,7 @@ type ChatHistoryItem = {
     completionTokens: number | null;
     totalTokens: number | null;
     toolCalls: number | null;
-    createdAt: Date;
+    createdAt: Date | string;
 };
 
 type ChatFormProps = {
@@ -96,6 +109,15 @@ type ControlFormState = {
     verbosity: "" | VerbosityLevel;
 };
 
+type PromptVersionRecord = {
+    id: string;
+    name: string;
+    type: PromptVersionType;
+    content: string;
+    createdAt: string;
+    updatedAt: string;
+};
+
 const INITIAL_VISIBLE_GROUPS = 8;
 const GROUPS_PER_PAGE = 8;
 const EMPTY_CONTROLS: ControlFormState = {
@@ -108,8 +130,29 @@ const EMPTY_CONTROLS: ControlFormState = {
     reasoning_effort: "",
     verbosity: "",
 };
+const DEFAULT_SYSTEM_PROMPT = "You are a helpful assistant inside a bring-your-own-key multi-provider app.";
+const EMPTY_SCORES: ResponseScores = {
+    correctness: null,
+    usefulness: null,
+    style: null,
+    instructionFollowing: null,
+    safety: null,
+    conciseness: null,
+};
+const PROMPT_VERSION_LABELS: Record<PromptVersionType, string> = {
+    system: "System prompt",
+    developer: "Developer prompt",
+    user: "User prompt",
+    template: "Template",
+};
+const PROMPT_VERSION_PLACEHOLDERS: Record<PromptVersionType, string> = {
+    system: "Helpful system prompt",
+    developer: "Structured developer prompt",
+    user: "Favorite user prompt",
+    template: "Reusable template",
+};
 
-function formatTimestamp(value: Date) {
+function formatTimestamp(value: Date | string) {
     return new Intl.DateTimeFormat("en-US", {
         dateStyle: "medium",
         timeStyle: "short",
@@ -172,6 +215,10 @@ function getTargetKey(target: ComparisonTarget) {
     return `${target.provider}:${target.model}`;
 }
 
+function createEmptyScores() {
+    return { ...EMPTY_SCORES };
+}
+
 function ControlLabel({ label, help }: { label: string; help: string }) {
     return (
         <span className="flex min-h-6 items-center gap-3 text-sm font-semibold text-slate-800">
@@ -185,6 +232,88 @@ function ControlLabel({ label, help }: { label: string; help: string }) {
                 ?
             </button>
         </span>
+    );
+}
+
+type PromptVersionControlsProps = {
+    type: PromptVersionType;
+    selectedId: string;
+    name: string;
+    versions: PromptVersionRecord[];
+    onSelectedIdChange: (value: string) => void;
+    onNameChange: (value: string) => void;
+    onApply: () => void;
+    onSave: () => void;
+    onDelete: () => void;
+    applyLabel?: string;
+};
+
+function PromptVersionControls({
+    type,
+    selectedId,
+    name,
+    versions,
+    onSelectedIdChange,
+    onNameChange,
+    onApply,
+    onSave,
+    onDelete,
+    applyLabel = "Load",
+}: PromptVersionControlsProps) {
+    return (
+        <div className="rounded-[20px] border border-slate-200/80 bg-white/80 p-4">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+                <div>
+                    <p className="text-sm font-semibold text-slate-900">{PROMPT_VERSION_LABELS[type]}</p>
+                    <p className="mt-1 text-xs text-slate-500">Save multiple versions and reload them whenever you want to repeat a setup.</p>
+                </div>
+                <span className="rounded-full bg-slate-100 px-3 py-1 text-xs text-slate-600">{versions.length} saved</span>
+            </div>
+
+            <div className="mt-4 grid gap-3 lg:grid-cols-[1.1fr_0.9fr_auto_auto]">
+                <select
+                    value={selectedId}
+                    onChange={(event) => onSelectedIdChange(event.target.value)}
+                    className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-900 outline-none transition focus:border-slate-400 focus:ring-4 focus:ring-amber-100"
+                >
+                    <option value="">Choose a saved {type} version</option>
+                    {versions.map((version) => (
+                        <option key={version.id} value={version.id}>{version.name}</option>
+                    ))}
+                </select>
+                <input
+                    value={name}
+                    onChange={(event) => onNameChange(event.target.value)}
+                    placeholder={PROMPT_VERSION_PLACEHOLDERS[type]}
+                    className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-900 outline-none transition focus:border-slate-400 focus:ring-4 focus:ring-amber-100"
+                />
+                <button
+                    type="button"
+                    onClick={onApply}
+                    disabled={!selectedId}
+                    className="rounded-full border border-slate-300 bg-white px-4 py-3 text-sm font-semibold text-slate-800 transition hover:border-slate-400 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                    {applyLabel}
+                </button>
+                <div className="flex gap-2">
+                    <button
+                        type="button"
+                        onClick={onSave}
+                        className="rounded-full bg-slate-950 px-4 py-3 text-sm font-semibold text-white transition hover:bg-slate-800"
+                    >
+                        Save current
+                    </button>
+                    <button
+                        type="button"
+                        onClick={onDelete}
+                        disabled={!selectedId}
+                        className="rounded-full border border-slate-300 bg-white px-4 py-3 text-sm font-semibold text-slate-700 transition hover:border-slate-400 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
+                    >
+                        Delete
+                    </button>
+                </div>
+            </div>
+        </div>
     );
 }
 
@@ -333,7 +462,10 @@ export default function ChatForm({ history, configuredProviders }: ChatFormProps
     const [mode, setMode] = useState<FormMode>("single");
     const [provider, setProvider] = useState<SupportedProvider>(initialProvider);
     const [model, setModel] = useState(getDefaultModel(initialProvider));
-    const [prompt, setPrompt] = useState("");
+    const [singlePrompt, setSinglePrompt] = useState("");
+    const [comparePrompt, setComparePrompt] = useState("");
+    const [systemPrompt, setSystemPrompt] = useState(DEFAULT_SYSTEM_PROMPT);
+    const [developerPrompt, setDeveloperPrompt] = useState("");
     const [controls, setControls] = useState<ControlFormState>(EMPTY_CONTROLS);
     const [memoryMode, setMemoryMode] = useState<MemoryMode>("shared");
     const [result, setResult] = useState<ChatResult | null>(null);
@@ -354,6 +486,25 @@ export default function ChatForm({ history, configuredProviders }: ChatFormProps
     const [messagesByProvider, setMessagesByProvider] = useState<Record<string, string>>({
         [initialProvider]: `Using current ${getProviderDefinition(initialProvider).label} catalog.`,
     });
+    const [promptVersions, setPromptVersions] = useState<PromptVersionRecord[]>([]);
+    const [selectedPromptVersionIds, setSelectedPromptVersionIds] = useState<Record<PromptVersionType, string>>({
+        system: "",
+        developer: "",
+        user: "",
+        template: "",
+    });
+    const [promptVersionNames, setPromptVersionNames] = useState<Record<PromptVersionType, string>>({
+        system: "",
+        developer: "",
+        user: "",
+        template: "",
+    });
+    const [promptLibraryMessage, setPromptLibraryMessage] = useState<string | null>(null);
+    const [ratingsByMessageId, setRatingsByMessageId] = useState<Record<string, ResponseScores>>({});
+    const [savingRatings, setSavingRatings] = useState<Record<string, boolean>>({});
+    const [ratingSummary, setRatingSummary] = useState<ModelRatingSummary[]>([]);
+    const [showPromptTemplates, setShowPromptTemplates] = useState(false);
+    const [showGenerationControls, setShowGenerationControls] = useState(false);
 
     const safeProvider = availableProviders.some((entry) => entry.id === provider)
         ? provider
@@ -440,6 +591,46 @@ export default function ChatForm({ history, configuredProviders }: ChatFormProps
         };
     }, [providersToLoad]);
 
+    useEffect(() => {
+        let ignore = false;
+
+        async function loadPromptVersions() {
+            try {
+                const res = await fetch("/api/prompts", { cache: "no-store" });
+                const data = await res.json().catch(() => null);
+
+                if (!ignore && res.ok) {
+                    setPromptVersions(Array.isArray(data?.versions) ? data.versions : []);
+                }
+            } catch {
+                if (!ignore) {
+                    setPromptLibraryMessage("Could not load saved prompt versions.");
+                }
+            }
+        }
+
+        async function loadRatingSummary() {
+            try {
+                const res = await fetch("/api/chat/ratings", { cache: "no-store" });
+                const data = await res.json().catch(() => null);
+
+                if (!ignore && res.ok) {
+                    setRatingSummary(Array.isArray(data?.summary) ? data.summary : []);
+                }
+            } catch {
+                if (!ignore) {
+                    setRatingSummary([]);
+                }
+            }
+        }
+
+        void Promise.all([loadPromptVersions(), loadRatingSummary()]);
+
+        return () => {
+            ignore = true;
+        };
+    }, []);
+
     const models = modelsByProvider[safeProvider] ?? getCatalogFallback(safeProvider);
     const effectiveModel = models.some((option) => option.id === model)
         ? model
@@ -456,12 +647,143 @@ export default function ChatForm({ history, configuredProviders }: ChatFormProps
     );
     const hiddenGroupCount = conversationGroups.length - visibleGroups.length;
     const controlsPayload = buildControlsPayload(controls);
+    const compareError = mode === "compare" ? result?.error : null;
+    const successfulCompareResults = compareResults.filter(
+        (entry): entry is CompareResult & { output: string } => entry.status === "success" && typeof entry.output === "string"
+    );
+    const promptVersionsByType = useMemo(
+        () =>
+            Object.fromEntries(
+                PROMPT_VERSION_TYPES.map((type) => [
+                    type,
+                    promptVersions.filter((version) => version.type === type),
+                ])
+            ) as Record<PromptVersionType, PromptVersionRecord[]>,
+        [promptVersions]
+    );
 
     function updateControl(name: keyof ControlFormState, value: string) {
         setControls((current) => ({
             ...current,
             [name]: value,
         }));
+    }
+
+    function setPromptVersionName(type: PromptVersionType, value: string) {
+        setPromptVersionNames((current) => ({
+            ...current,
+            [type]: value,
+        }));
+    }
+
+    function setSelectedPromptVersionId(type: PromptVersionType, value: string) {
+        setSelectedPromptVersionIds((current) => ({
+            ...current,
+            [type]: value,
+        }));
+    }
+    function applyPromptVersion(type: PromptVersionType, insertOnly = false) {
+        const version = promptVersions.find((entry) => entry.id === selectedPromptVersionIds[type]);
+
+        if (!version) {
+            return;
+        }
+
+        if (type === "system") {
+            setSystemPrompt(version.content);
+        } else if (type === "developer") {
+            setDeveloperPrompt(version.content);
+        } else if (type === "user") {
+            if (mode === "compare") {
+                setComparePrompt(version.content);
+            } else {
+                setSinglePrompt(version.content);
+            }
+        } else if (mode === "compare") {
+            setComparePrompt((current) => {
+                if (!insertOnly || !current.trim()) {
+                    return version.content;
+                }
+
+                return `${current.trim()}\n\n${version.content}`;
+            });
+        } else {
+            setSinglePrompt((current) => {
+                if (!insertOnly || !current.trim()) {
+                    return version.content;
+                }
+
+                return `${current.trim()}\n\n${version.content}`;
+            });
+        }
+
+        setPromptLibraryMessage(`${version.name} loaded.`);
+    }
+
+    async function refreshPromptVersions() {
+        const res = await fetch("/api/prompts", { cache: "no-store" });
+        const data = await res.json().catch(() => null);
+        setPromptVersions(Array.isArray(data?.versions) ? data.versions : []);
+    }
+
+    async function refreshRatingSummary() {
+        const res = await fetch("/api/chat/ratings", { cache: "no-store" });
+        const data = await res.json().catch(() => null);
+        setRatingSummary(Array.isArray(data?.summary) ? data.summary : []);
+    }
+
+    async function handleSavePromptVersion(type: PromptVersionType) {
+        const content = type === "system" ? systemPrompt : type === "developer" ? developerPrompt : mode === "compare" ? comparePrompt : singlePrompt;
+
+        if (!content.trim()) {
+            setPromptLibraryMessage(`Add some ${PROMPT_VERSION_LABELS[type].toLowerCase()} content before saving.`);
+            return;
+        }
+
+        const res = await fetch("/api/prompts", {
+            method: "POST",
+            headers: {
+                "Content-Type": "application/json",
+            },
+            body: JSON.stringify({
+                type,
+                name: promptVersionNames[type],
+                content,
+            }),
+        });
+        const data = await res.json().catch(() => null);
+
+        if (!res.ok) {
+            setPromptLibraryMessage(data?.error || "Could not save prompt version.");
+            return;
+        }
+
+        setPromptLibraryMessage(`${data?.version?.name || PROMPT_VERSION_LABELS[type]} saved.`);
+        setPromptVersionName(type, "");
+        setSelectedPromptVersionId(type, data?.version?.id || "");
+        await refreshPromptVersions();
+    }
+
+    async function handleDeletePromptVersion(type: PromptVersionType) {
+        const id = selectedPromptVersionIds[type];
+
+        if (!id) {
+            return;
+        }
+
+        const res = await fetch(`/api/prompts?id=${encodeURIComponent(id)}`, {
+            method: "DELETE",
+        });
+        const data = await res.json().catch(() => null);
+
+        if (!res.ok) {
+            setPromptLibraryMessage(data?.error || "Could not delete prompt version.");
+            return;
+        }
+
+        setPromptLibraryMessage(`${PROMPT_VERSION_LABELS[type]} deleted.`);
+        setSelectedPromptVersionId(type, "");
+        await refreshPromptVersions();
     }
 
     function handleAddTarget() {
@@ -516,13 +838,17 @@ export default function ChatForm({ history, configuredProviders }: ChatFormProps
             const body =
                 mode === "compare"
                     ? {
-                          prompt,
+                          prompt: comparePrompt,
+                          systemPrompt,
+                          developerPrompt,
                           targets: normalizedTargets,
                           controls: controlsPayload,
                           memoryMode,
                       }
                     : {
-                          prompt,
+                          prompt: singlePrompt,
+                          systemPrompt,
+                          developerPrompt,
                           provider: safeProvider,
                           model: effectiveModel,
                           controls: controlsPayload,
@@ -553,7 +879,11 @@ export default function ChatForm({ history, configuredProviders }: ChatFormProps
                 setResult(data);
             }
 
-            setPrompt("");
+            if (mode === "compare") {
+                setComparePrompt("");
+            } else {
+                setSinglePrompt("");
+            }
             setLoading(false);
             router.refresh();
         } catch {
@@ -577,26 +907,83 @@ export default function ChatForm({ history, configuredProviders }: ChatFormProps
         setCompareResults([]);
     }
 
-    const compareError = mode === "compare" ? result?.error : null;
+    function handleRatingChange(messageId: string, field: ResponseRatingField, value: number) {
+        setRatingsByMessageId((current) => ({
+            ...current,
+            [messageId]: {
+                ...(current[messageId] ?? createEmptyScores()),
+                [field]: value,
+            },
+        }));
+    }
+
+    async function handleSaveRating(messageId: string) {
+        const scores = ratingsByMessageId[messageId];
+
+        if (!scores) {
+            return;
+        }
+
+        setSavingRatings((current) => ({
+            ...current,
+            [messageId]: true,
+        }));
+
+        try {
+            const res = await fetch("/api/chat/ratings", {
+                method: "POST",
+                headers: {
+                    "Content-Type": "application/json",
+                },
+                body: JSON.stringify({
+                    chatMessageId: messageId,
+                    scores,
+                }),
+            });
+            const data = await res.json().catch(() => null);
+
+            if (!res.ok) {
+                setPromptLibraryMessage(data?.error || "Could not save ratings.");
+                return;
+            }
+
+            setPromptLibraryMessage("Ratings saved.");
+            await refreshRatingSummary();
+        } finally {
+            setSavingRatings((current) => ({
+                ...current,
+                [messageId]: false,
+            }));
+        }
+    }
+
+    const currentSingleScores = result?.messageId
+        ? ratingsByMessageId[result.messageId] ?? createEmptyScores()
+        : createEmptyScores();
 
     return (
-        <section className="space-y-6">
-            <section className="glass-panel rounded-[30px] p-6 sm:p-7">
-                <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
-                    <div>
-                        <p className="eyebrow">Prompt playground</p>
-                        <h2 className="display-font text-2xl font-semibold text-slate-950">Single runs and model comparisons</h2>
-                        <p className="mt-2 text-sm leading-6 text-slate-600">
-                            Send one prompt to a single model or fan it out across multiple providers and compare quality, latency, token usage, formatting, tool behavior, and instruction following.
-                        </p>
-                    </div>
-                    <div className="rounded-2xl border border-slate-200/80 bg-white/70 px-4 py-3 text-sm text-slate-600">
-                        {availableProviders.length} configured provider{availableProviders.length === 1 ? "" : "s"} ready for testing.
-                    </div>
+        <section className="space-y-5 xl:flex xl:h-full xl:min-h-0 xl:flex-col">
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+                <div>
+                    <p className="eyebrow">Prompt playground</p>
+                    <h2 className="display-font text-2xl font-semibold text-slate-950">Single runs and model comparisons</h2>
+                    <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-600">
+                        Save prompt variants, compare multiple models, rate outputs across six dimensions, and inspect response diffs without leaving the workspace.
+                    </p>
                 </div>
+                <div className="rounded-2xl bg-white/70 px-4 py-3 text-sm text-slate-600 shadow-[0_12px_32px_rgba(20,33,61,0.06)] ring-1 ring-slate-200/70">
+                    {availableProviders.length} configured provider{availableProviders.length === 1 ? "" : "s"} ready for testing.
+                </div>
+            </div>
 
-                <div className="mt-6 grid gap-6 xl:grid-cols-[1.08fr_0.92fr] xl:items-start">
-                    <div className="min-w-0 space-y-4">
+            <div className="grid gap-5 xl:min-h-0 xl:flex-1 xl:grid-cols-[1.08fr_0.96fr_0.82fr] xl:items-stretch">
+                <section className="flex min-h-0 flex-col overflow-hidden rounded-[32px] bg-[rgba(255,251,245,0.74)] shadow-[0_20px_60px_rgba(20,33,61,0.08)] ring-1 ring-slate-200/70 backdrop-blur-[14px]">
+                    <div className="border-b border-slate-200/80 px-5 py-4">
+                        <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Prompt composer</p>
+                        <p className="mt-1 text-sm text-slate-600">Build reusable prompts, tune execution settings, and launch runs without leaving this pane.</p>
+                    </div>
+                    <div className="min-h-0 flex-1 overflow-y-auto p-5 pr-4 [scrollbar-gutter:stable]">
+                        <div className="min-w-0 space-y-4">
                         <form
                             onSubmit={handleSubmit}
                             className="rounded-[28px] border border-slate-200/80 bg-white/78 p-5 shadow-[0_16px_40px_rgba(20,33,61,0.06)]"
@@ -605,45 +992,124 @@ export default function ChatForm({ history, configuredProviders }: ChatFormProps
                                 <div className="flex flex-col gap-4 rounded-[24px] border border-slate-200/80 bg-[linear-gradient(180deg,rgba(255,255,255,0.9),rgba(249,244,236,0.95))] p-4">
                                     <div className="flex flex-wrap items-center justify-between gap-3">
                                         <div>
-                                            <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Run mode</p>
-                                            <p className="mt-1 text-sm text-slate-600">Choose between a single response flow or a side-by-side evaluation run.</p>
+                                            <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Prompt mode</p>
+                                            <p className="mt-1 text-sm text-slate-600">Switch between a single-run workflow and a comparison workflow with separate prompt state.</p>
                                         </div>
                                         <div className="rounded-full border border-amber-200 bg-amber-50 px-3 py-1 text-xs font-semibold text-amber-800">
                                             {loading ? "Working..." : mode === "compare" ? "Comparison ready" : "Single run ready"}
                                         </div>
                                     </div>
 
-                                    <div className="grid gap-3 sm:grid-cols-2">
-                                        <button
-                                            type="button"
-                                            onClick={() => setMode("single")}
-                                            className={`rounded-[22px] border px-4 py-4 text-left transition ${
-                                                mode === "single"
-                                                    ? "border-slate-950 bg-slate-950 text-white"
-                                                    : "border-slate-200 bg-white text-slate-800 hover:border-slate-300"
-                                            }`}
-                                        >
-                                            <p className="text-sm font-semibold">Single model</p>
-                                            <p className={`mt-1 text-xs leading-5 ${mode === "single" ? "text-slate-200" : "text-slate-500"}`}>
-                                                Focus on one provider/model pair with the shared controls below.
-                                            </p>
-                                        </button>
-                                        <button
-                                            type="button"
-                                            onClick={() => setMode("compare")}
-                                            className={`rounded-[22px] border px-4 py-4 text-left transition ${
-                                                mode === "compare"
-                                                    ? "border-slate-950 bg-slate-950 text-white"
-                                                    : "border-slate-200 bg-white text-slate-800 hover:border-slate-300"
-                                            }`}
-                                        >
-                                            <p className="text-sm font-semibold">Multi-model compare</p>
-                                            <p className={`mt-1 text-xs leading-5 ${mode === "compare" ? "text-slate-200" : "text-slate-500"}`}>
-                                                Run the same prompt across multiple models and compare outputs in one place.
-                                            </p>
-                                        </button>
+                                    <div className="rounded-[22px] bg-slate-100 p-1">
+                                        <div className="grid gap-2 sm:grid-cols-2">
+                                            <button
+                                                type="button"
+                                                onClick={() => setMode("single")}
+                                                className={mode === "single" ? "rounded-[18px] bg-white px-4 py-3 text-left text-slate-950 shadow-[0_8px_24px_rgba(20,33,61,0.08)]" : "rounded-[18px] px-4 py-3 text-left text-slate-600 transition hover:bg-white/70 hover:text-slate-900"}
+                                            >
+                                                <p className="text-sm font-semibold">Single prompt</p>
+                                                <p className="mt-1 text-xs leading-5">One provider and model with its own prompt input.</p>
+                                            </button>
+                                            <button
+                                                type="button"
+                                                onClick={() => setMode("compare")}
+                                                className={mode === "compare" ? "rounded-[18px] bg-white px-4 py-3 text-left text-slate-950 shadow-[0_8px_24px_rgba(20,33,61,0.08)]" : "rounded-[18px] px-4 py-3 text-left text-slate-600 transition hover:bg-white/70 hover:text-slate-900"}
+                                            >
+                                                <p className="text-sm font-semibold">Comparison prompt</p>
+                                                <p className="mt-1 text-xs leading-5">Multiple targets with a dedicated comparison prompt.</p>
+                                            </button>
+                                        </div>
                                     </div>
                                 </div>
+                                <div className="rounded-[24px] border border-slate-200/80 bg-white/80 p-4">
+                                    <button
+                                        type="button"
+                                        onClick={() => setShowPromptTemplates((current) => !current)}
+                                        className="flex w-full items-center justify-between gap-3 text-left"
+                                    >
+                                        <div>
+                                            <p className="text-sm font-semibold text-slate-900">Prompt templates and instructions</p>
+                                            <p className="mt-1 text-xs leading-5 text-slate-500">Open system, developer, user, and reusable template presets only when you need to manage them.</p>
+                                        </div>
+                                        <span className="rounded-full bg-slate-100 px-3 py-1 text-xs text-slate-600">
+                                            {showPromptTemplates ? "Hide" : "Show"}
+                                        </span>
+                                    </button>
+
+                                    {showPromptTemplates ? (
+                                        <div className="mt-4 space-y-4">
+                                            <PromptVersionControls
+                                                type="system"
+                                                selectedId={selectedPromptVersionIds.system}
+                                                name={promptVersionNames.system}
+                                                versions={promptVersionsByType.system}
+                                                onSelectedIdChange={(value) => setSelectedPromptVersionId("system", value)}
+                                                onNameChange={(value) => setPromptVersionName("system", value)}
+                                                onApply={() => applyPromptVersion("system")}
+                                                onSave={() => void handleSavePromptVersion("system")}
+                                                onDelete={() => void handleDeletePromptVersion("system")}
+                                            />
+
+                                            <textarea
+                                                value={systemPrompt}
+                                                onChange={(event) => setSystemPrompt(event.target.value)}
+                                                placeholder="Define the assistant's standing behavior, tone, and boundaries..."
+                                                className="min-h-28 w-full rounded-[24px] border border-slate-200 bg-white px-4 py-4 text-sm text-slate-900 outline-none transition focus:border-slate-400 focus:ring-4 focus:ring-amber-100"
+                                            />
+
+                                            <PromptVersionControls
+                                                type="developer"
+                                                selectedId={selectedPromptVersionIds.developer}
+                                                name={promptVersionNames.developer}
+                                                versions={promptVersionsByType.developer}
+                                                onSelectedIdChange={(value) => setSelectedPromptVersionId("developer", value)}
+                                                onNameChange={(value) => setPromptVersionName("developer", value)}
+                                                onApply={() => applyPromptVersion("developer")}
+                                                onSave={() => void handleSavePromptVersion("developer")}
+                                                onDelete={() => void handleDeletePromptVersion("developer")}
+                                            />
+
+                                            <textarea
+                                                value={developerPrompt}
+                                                onChange={(event) => setDeveloperPrompt(event.target.value)}
+                                                placeholder="Add developer-level instructions such as output format, guardrails, or evaluation criteria..."
+                                                className="min-h-28 w-full rounded-[24px] border border-slate-200 bg-white px-4 py-4 text-sm text-slate-900 outline-none transition focus:border-slate-400 focus:ring-4 focus:ring-amber-100"
+                                            />
+
+                                            <PromptVersionControls
+                                                type="user"
+                                                selectedId={selectedPromptVersionIds.user}
+                                                name={promptVersionNames.user}
+                                                versions={promptVersionsByType.user}
+                                                onSelectedIdChange={(value) => setSelectedPromptVersionId("user", value)}
+                                                onNameChange={(value) => setPromptVersionName("user", value)}
+                                                onApply={() => applyPromptVersion("user")}
+                                                onSave={() => void handleSavePromptVersion("user")}
+                                                onDelete={() => void handleDeletePromptVersion("user")}
+                                            />
+
+                                            <PromptVersionControls
+                                                type="template"
+                                                selectedId={selectedPromptVersionIds.template}
+                                                name={promptVersionNames.template}
+                                                versions={promptVersionsByType.template}
+                                                onSelectedIdChange={(value) => setSelectedPromptVersionId("template", value)}
+                                                onNameChange={(value) => setPromptVersionName("template", value)}
+                                                onApply={() => applyPromptVersion("template", true)}
+                                                onSave={() => void handleSavePromptVersion("template")}
+                                                onDelete={() => void handleDeletePromptVersion("template")}
+                                                applyLabel="Insert"
+                                            />
+                                        </div>
+                                    ) : null}
+                                </div>
+
+                                {promptLibraryMessage ? (
+                                    <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700">
+                                        {promptLibraryMessage}
+                                    </div>
+                                ) : null}
+
 
                                 <div className="rounded-[24px] border border-slate-200/80 bg-white/80 p-4">
                                     <div className="flex flex-wrap items-center justify-between gap-3">
@@ -872,82 +1338,110 @@ export default function ChatForm({ history, configuredProviders }: ChatFormProps
                                 )}
 
                                 <div className="rounded-[24px] border border-slate-200/80 bg-white/80 p-4">
-                                    <div className="flex flex-wrap items-center justify-between gap-3">
+                                    <button
+                                        type="button"
+                                        onClick={() => setShowGenerationControls((current) => !current)}
+                                        className="flex w-full items-center justify-between gap-3 text-left"
+                                    >
                                         <div>
                                             <p className="text-sm font-semibold text-slate-900">Generation controls</p>
-                                            <p className="mt-1 text-xs leading-5 text-slate-500">Use the same settings across every run so you can compare behavior more fairly.</p>
+                                            <p className="mt-1 text-xs leading-5 text-slate-500">Open advanced tuning only when you want to adjust temperature, token limits, or reasoning settings.</p>
                                         </div>
-                                        <div className="flex flex-wrap gap-2 text-[11px] text-slate-500">
-                                            <span className="rounded-full bg-slate-100 px-3 py-1">temperature</span>
-                                            <span className="rounded-full bg-slate-100 px-3 py-1">top_p</span>
-                                            <span className="rounded-full bg-slate-100 px-3 py-1">seed</span>
-                                            <span className="rounded-full bg-slate-100 px-3 py-1">reasoning / verbosity</span>
-                                        </div>
-                                    </div>
+                                        <span className="rounded-full bg-slate-100 px-3 py-1 text-xs text-slate-600">
+                                            {showGenerationControls ? "Hide" : "Show"}
+                                        </span>
+                                    </button>
 
-                                    <div className="mt-4 grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-                                        <label className="space-y-2 text-sm font-semibold text-slate-800">
-                                            <ControlLabel label="Temperature" help="Controls randomness. Lower values are more deterministic, while higher values allow more variation and creativity." />
-                                            <input value={controls.temperature} onChange={(e) => updateControl("temperature", e.target.value)} placeholder="0.7" className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm font-normal text-slate-900 outline-none transition focus:border-slate-400 focus:ring-4 focus:ring-amber-100" />
-                                        </label>
-                                        <label className="space-y-2 text-sm font-semibold text-slate-800">
-                                            <ControlLabel label="Top P" help="Limits sampling to the most likely tokens whose combined probability reaches this value. Lower numbers make output more conservative." />
-                                            <input value={controls.top_p} onChange={(e) => updateControl("top_p", e.target.value)} placeholder="1" className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm font-normal text-slate-900 outline-none transition focus:border-slate-400 focus:ring-4 focus:ring-amber-100" />
-                                        </label>
-                                        <label className="space-y-2 text-sm font-semibold text-slate-800">
-                                            <ControlLabel label="Max tokens" help="Sets the maximum number of tokens the model can generate in the response before it stops." />
-                                            <input value={controls.max_tokens} onChange={(e) => updateControl("max_tokens", e.target.value)} placeholder="1024" className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm font-normal text-slate-900 outline-none transition focus:border-slate-400 focus:ring-4 focus:ring-amber-100" />
-                                        </label>
-                                        <label className="space-y-2 text-sm font-semibold text-slate-800">
-                                            <ControlLabel label="Seed" help="Requests repeatable sampling when the provider supports it. Using the same seed and settings can make outputs easier to compare." />
-                                            <input value={controls.seed} onChange={(e) => updateControl("seed", e.target.value)} placeholder="42" className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm font-normal text-slate-900 outline-none transition focus:border-slate-400 focus:ring-4 focus:ring-amber-100" />
-                                        </label>
-                                        <label className="space-y-2 text-sm font-semibold text-slate-800">
-                                            <ControlLabel label="Frequency penalty" help="Discourages the model from repeating the same words or phrases too often across the response." />
-                                            <input value={controls.frequency_penalty} onChange={(e) => updateControl("frequency_penalty", e.target.value)} placeholder="0" className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm font-normal text-slate-900 outline-none transition focus:border-slate-400 focus:ring-4 focus:ring-amber-100" />
-                                        </label>
-                                        <label className="space-y-2 text-sm font-semibold text-slate-800">
-                                            <ControlLabel label="Presence penalty" help="Encourages the model to introduce new ideas or topics instead of staying on the same wording or concepts." />
-                                            <input value={controls.presence_penalty} onChange={(e) => updateControl("presence_penalty", e.target.value)} placeholder="0" className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm font-normal text-slate-900 outline-none transition focus:border-slate-400 focus:ring-4 focus:ring-amber-100" />
-                                        </label>
-                                        <label className="space-y-2 text-sm font-semibold text-slate-800">
-                                            <ControlLabel label="Reasoning effort" help="Asks supported providers to spend less or more effort on reasoning before answering. Higher effort can improve harder tasks but may add latency." />
-                                            <select value={controls.reasoning_effort} onChange={(e) => updateControl("reasoning_effort", e.target.value)} className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm font-normal text-slate-900 outline-none transition focus:border-slate-400 focus:ring-4 focus:ring-amber-100">
-                                                <option value="">Provider default</option>
-                                                <option value="low">Low</option>
-                                                <option value="medium">Medium</option>
-                                                <option value="high">High</option>
-                                            </select>
-                                        </label>
-                                        <label className="space-y-2 text-sm font-semibold text-slate-800">
-                                            <ControlLabel label="Verbosity" help="Requests shorter or more detailed responses when the provider supports that setting." />
-                                            <select value={controls.verbosity} onChange={(e) => updateControl("verbosity", e.target.value)} className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm font-normal text-slate-900 outline-none transition focus:border-slate-400 focus:ring-4 focus:ring-amber-100">
-                                                <option value="">Provider default</option>
-                                                <option value="low">Low</option>
-                                                <option value="medium">Medium</option>
-                                                <option value="high">High</option>
-                                            </select>
-                                        </label>
-                                    </div>
+                                    {showGenerationControls ? (
+                                        <>
+                                            <div className="mt-4 flex flex-wrap gap-2 text-[11px] text-slate-500">
+                                                <span className="rounded-full bg-slate-100 px-3 py-1">temperature</span>
+                                                <span className="rounded-full bg-slate-100 px-3 py-1">top_p</span>
+                                                <span className="rounded-full bg-slate-100 px-3 py-1">seed</span>
+                                                <span className="rounded-full bg-slate-100 px-3 py-1">reasoning / verbosity</span>
+                                            </div>
+
+                                            <div className="mt-4 grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+                                                <label className="space-y-2 text-sm font-semibold text-slate-800">
+                                                    <ControlLabel label="Temperature" help="Controls randomness. Lower values are more deterministic, while higher values allow more variation and creativity." />
+                                                    <input value={controls.temperature} onChange={(e) => updateControl("temperature", e.target.value)} placeholder="0.7" className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm font-normal text-slate-900 outline-none transition focus:border-slate-400 focus:ring-4 focus:ring-amber-100" />
+                                                </label>
+                                                <label className="space-y-2 text-sm font-semibold text-slate-800">
+                                                    <ControlLabel label="Top P" help="Limits sampling to the most likely tokens whose combined probability reaches this value. Lower numbers make output more conservative." />
+                                                    <input value={controls.top_p} onChange={(e) => updateControl("top_p", e.target.value)} placeholder="1" className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm font-normal text-slate-900 outline-none transition focus:border-slate-400 focus:ring-4 focus:ring-amber-100" />
+                                                </label>
+                                                <label className="space-y-2 text-sm font-semibold text-slate-800">
+                                                    <ControlLabel label="Max tokens" help="Sets the maximum number of tokens the model can generate in the response before it stops." />
+                                                    <input value={controls.max_tokens} onChange={(e) => updateControl("max_tokens", e.target.value)} placeholder="1024" className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm font-normal text-slate-900 outline-none transition focus:border-slate-400 focus:ring-4 focus:ring-amber-100" />
+                                                </label>
+                                                <label className="space-y-2 text-sm font-semibold text-slate-800">
+                                                    <ControlLabel label="Seed" help="Requests repeatable sampling when the provider supports it. Using the same seed and settings can make outputs easier to compare." />
+                                                    <input value={controls.seed} onChange={(e) => updateControl("seed", e.target.value)} placeholder="42" className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm font-normal text-slate-900 outline-none transition focus:border-slate-400 focus:ring-4 focus:ring-amber-100" />
+                                                </label>
+                                                <label className="space-y-2 text-sm font-semibold text-slate-800">
+                                                    <ControlLabel label="Frequency penalty" help="Discourages the model from repeating the same words or phrases too often across the response." />
+                                                    <input value={controls.frequency_penalty} onChange={(e) => updateControl("frequency_penalty", e.target.value)} placeholder="0" className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm font-normal text-slate-900 outline-none transition focus:border-slate-400 focus:ring-4 focus:ring-amber-100" />
+                                                </label>
+                                                <label className="space-y-2 text-sm font-semibold text-slate-800">
+                                                    <ControlLabel label="Presence penalty" help="Encourages the model to introduce new ideas or topics instead of staying on the same wording or concepts." />
+                                                    <input value={controls.presence_penalty} onChange={(e) => updateControl("presence_penalty", e.target.value)} placeholder="0" className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm font-normal text-slate-900 outline-none transition focus:border-slate-400 focus:ring-4 focus:ring-amber-100" />
+                                                </label>
+                                                <label className="space-y-2 text-sm font-semibold text-slate-800">
+                                                    <ControlLabel label="Reasoning effort" help="Asks supported providers to spend less or more effort on reasoning before answering. Higher effort can improve harder tasks but may add latency." />
+                                                    <select value={controls.reasoning_effort} onChange={(e) => updateControl("reasoning_effort", e.target.value)} className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm font-normal text-slate-900 outline-none transition focus:border-slate-400 focus:ring-4 focus:ring-amber-100">
+                                                        <option value="">Provider default</option>
+                                                        <option value="low">Low</option>
+                                                        <option value="medium">Medium</option>
+                                                        <option value="high">High</option>
+                                                    </select>
+                                                </label>
+                                                <label className="space-y-2 text-sm font-semibold text-slate-800">
+                                                    <ControlLabel label="Verbosity" help="Requests shorter or more detailed responses when the provider supports that setting." />
+                                                    <select value={controls.verbosity} onChange={(e) => updateControl("verbosity", e.target.value)} className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm font-normal text-slate-900 outline-none transition focus:border-slate-400 focus:ring-4 focus:ring-amber-100">
+                                                        <option value="">Provider default</option>
+                                                        <option value="low">Low</option>
+                                                        <option value="medium">Medium</option>
+                                                        <option value="high">High</option>
+                                                    </select>
+                                                </label>
+                                            </div>
+                                        </>
+                                    ) : null}
                                 </div>
 
-                                <textarea
-                                    value={prompt}
-                                    onChange={(e) => setPrompt(e.target.value)}
-                                    placeholder={mode === "compare" ? "Give every model the same task so you can compare how they respond..." : "Ask for a summary, brainstorm ideas, or draft content..."}
-                                    className="min-h-52 w-full rounded-[24px] border border-slate-200 bg-[linear-gradient(180deg,rgba(255,255,255,0.96),rgba(250,246,240,0.92))] px-4 py-4 text-slate-900 outline-none transition focus:border-slate-400 focus:ring-4 focus:ring-amber-100"
-                                    required
-                                />
+                                <div className="rounded-[24px] border border-slate-200/80 bg-[linear-gradient(180deg,rgba(255,255,255,0.96),rgba(250,246,240,0.92))] p-4">
+                                    <div className="flex flex-wrap items-center justify-between gap-3">
+                                        <div>
+                                            <p className="text-sm font-semibold text-slate-900">{mode === "compare" ? "Comparison prompt" : "Single prompt"}</p>
+                                            <p className="mt-1 text-xs leading-5 text-slate-500">
+                                                {mode === "compare"
+                                                    ? "This prompt is used across every selected comparison target."
+                                                    : "This prompt is used only for the selected provider/model pair."}
+                                            </p>
+                                        </div>
+                                        <span className="rounded-full bg-slate-100 px-3 py-1 text-xs text-slate-600">
+                                            {mode === "compare" ? "Compare tab" : "Single tab"}
+                                        </span>
+                                    </div>
+
+                                    <textarea
+                                        value={mode === "compare" ? comparePrompt : singlePrompt}
+                                        onChange={(e) => mode === "compare" ? setComparePrompt(e.target.value) : setSinglePrompt(e.target.value)}
+                                        placeholder={mode === "compare" ? "Give every model the same task so you can compare how they respond..." : "Ask for a summary, brainstorm ideas, or draft content..."}
+                                        className="mt-4 min-h-52 w-full rounded-[24px] border border-slate-200 bg-white px-4 py-4 text-slate-900 outline-none transition focus:border-slate-400 focus:ring-4 focus:ring-amber-100"
+                                        required
+                                    />
+                                </div>
 
                                 <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
                                     <div className="flex flex-wrap gap-2 text-xs font-medium text-slate-500">
                                         <span className="rounded-full bg-slate-100 px-3 py-1">Encrypted key access</span>
-                                        <span className="rounded-full bg-slate-100 px-3 py-1">Prompt is cleared after success</span>
+                                        <span className="rounded-full bg-slate-100 px-3 py-1">Prompt versions reusable</span>
                                         <span className="rounded-full bg-slate-100 px-3 py-1">History saved automatically</span>
                                     </div>
                                     <button
                                         type="submit"
-                                        disabled={loading || (mode === "compare" && normalizedTargets.length < 2)}
+                                        disabled={loading || (mode === "compare" && normalizedTargets.length < 2) || (mode === "compare" ? !comparePrompt.trim() : !singlePrompt.trim())}
                                         className="rounded-full bg-slate-950 px-5 py-3 text-sm font-semibold text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-60"
                                     >
                                         {loading ? "Running..." : mode === "compare" ? "Compare models" : "Send prompt"}
@@ -961,9 +1455,13 @@ export default function ChatForm({ history, configuredProviders }: ChatFormProps
                                 {compareError}
                             </div>
                         ) : null}
+                        </div>
                     </div>
+                </section>
 
-                    <div className="min-w-0 rounded-[28px] border border-slate-200/80 bg-white/82 p-5 shadow-[0_16px_40px_rgba(20,33,61,0.05)]">
+                <section className="flex min-h-0 flex-col overflow-hidden rounded-[32px] bg-[rgba(255,251,245,0.78)] shadow-[0_20px_60px_rgba(20,33,61,0.08)] ring-1 ring-slate-200/70 backdrop-blur-[14px]">
+                    <div className="min-h-0 flex-1 overflow-y-auto p-5 pr-4 [scrollbar-gutter:stable]">
+                        <div className="min-w-0 rounded-[28px] bg-white/82 p-5 shadow-[0_16px_40px_rgba(20,33,61,0.05)] ring-1 ring-slate-200/80">
                         {mode === "compare" ? (
                             <>
                                 <div className="flex flex-wrap items-center justify-between gap-3">
@@ -979,6 +1477,36 @@ export default function ChatForm({ history, configuredProviders }: ChatFormProps
                                         <span className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1">style</span>
                                     </div>
                                 </div>
+
+                                {ratingSummary.length ? (
+                                    <div className="mt-4 rounded-[24px] border border-slate-200/80 bg-[linear-gradient(180deg,rgba(255,255,255,0.95),rgba(249,244,236,0.92))] p-4">
+                                        <div>
+                                            <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Model rating summary</p>
+                                            <p className="mt-1 text-sm text-slate-600">Simple averages across saved model evaluations.</p>
+                                        </div>
+                                        <div className="mt-4 grid gap-3 xl:grid-cols-2">
+                                            {ratingSummary.map((entry) => (
+                                                <article key={entry.modelKey} className="rounded-[20px] border border-slate-200 bg-white/80 p-4">
+                                                    <div className="flex items-start justify-between gap-3">
+                                                        <div>
+                                                            <p className="text-sm font-semibold text-slate-900">{entry.provider && isSupportedProvider(entry.provider) ? getProviderDefinition(entry.provider).label : "Unknown provider"}</p>
+                                                            <p className="mt-1 text-xs text-slate-500">{getModelLabel(entry.model) || entry.model || "Unknown model"}</p>
+                                                        </div>
+                                                        <div className="rounded-full bg-slate-950 px-3 py-1 text-xs font-semibold text-white">{entry.overallAverage ?? "n/a"}</div>
+                                                    </div>
+                                                    <p className="mt-3 text-xs text-slate-500">{entry.sampleCount} rated response{entry.sampleCount === 1 ? "" : "s"}</p>
+                                                    <div className="mt-3 grid gap-2 sm:grid-cols-2">
+                                                        {RESPONSE_RATING_FIELDS.map((field) => (
+                                                            <div key={field} className="rounded-2xl bg-slate-50 px-3 py-2 text-xs text-slate-600">
+                                                                <span className="font-semibold text-slate-900">{field}:</span> {entry.averages[field] ?? "n/a"}
+                                                            </div>
+                                                        ))}
+                                                    </div>
+                                                </article>
+                                            ))}
+                                        </div>
+                                    </div>
+                                ) : null}
 
                                 {compareResults.length ? (
                                     <div className="mt-4 space-y-4">
@@ -1021,19 +1549,40 @@ export default function ChatForm({ history, configuredProviders }: ChatFormProps
                                                     </div>
                                                 </div>
 
-                                                <div className="px-5 py-4">
+                                                <div className="space-y-4 px-5 py-4">
                                                     {entry.status === "success" && entry.output ? (
-                                                        <MarkdownMessage content={entry.output} />
+                                                        <>
+                                                            <MarkdownMessage content={entry.output} />
+                                                            <ResponseRatingPanel
+                                                                messageId={entry.messageId}
+                                                                scores={entry.messageId ? ratingsByMessageId[entry.messageId] ?? createEmptyScores() : createEmptyScores()}
+                                                                saving={Boolean(entry.messageId && savingRatings[entry.messageId])}
+                                                                onChange={(field, value) => entry.messageId && handleRatingChange(entry.messageId, field, value)}
+                                                                onSave={() => entry.messageId && void handleSaveRating(entry.messageId)}
+                                                            />
+                                                        </>
                                                     ) : (
                                                         <p className="text-sm text-rose-700">{entry.error || "Comparison request failed."}</p>
                                                     )}
                                                 </div>
                                             </article>
                                         ))}
+
+                                        {successfulCompareResults.length >= 2 ? (
+                                            <ComparisonDiffExplorer
+                                                results={successfulCompareResults.map((entry) => ({
+                                                    provider: entry.provider,
+                                                    model: entry.model,
+                                                    output: entry.output,
+                                                    latencyMs: entry.latencyMs,
+                                                    totalTokens: entry.usage?.total_tokens ?? null,
+                                                }))}
+                                            />
+                                        ) : null}
                                     </div>
                                 ) : (
                                     <div className="mt-4 rounded-[24px] border border-dashed border-slate-300 bg-white/60 px-5 py-8 text-sm text-slate-600">
-                                        Run a comparison to populate this board with response cards and shared metrics.
+                                        Run a comparison to populate this board with response cards, ratings, summaries, and diff tools.
                                     </div>
                                 )}
                             </>
@@ -1056,7 +1605,7 @@ export default function ChatForm({ history, configuredProviders }: ChatFormProps
                                             <MarkdownMessage content={result.output} />
                                         </div>
 
-                                        <div className="mt-4 grid gap-3 sm:grid-cols-3">
+                                        <div className="mt-4 grid gap-3 sm:grid-cols-4">
                                             <div className="section-card p-4">
                                                 <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Model</p>
                                                 <p className="mt-2 text-sm font-medium text-slate-900">{getModelLabel(result.model ?? null) || "Unknown"}</p>
@@ -1069,8 +1618,26 @@ export default function ChatForm({ history, configuredProviders }: ChatFormProps
                                                 <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Prompt tokens</p>
                                                 <p className="mt-2 text-sm font-medium text-slate-900">{result.usage?.prompt_tokens ?? "n/a"}</p>
                                             </div>
+                                            <div className="section-card p-4">
+                                                <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Latency</p>
+                                                <p className="mt-2 text-sm font-medium text-slate-900">{result.latencyMs !== null && result.latencyMs !== undefined ? `${result.latencyMs} ms` : "n/a"}</p>
+                                            </div>
+                                        </div>
+
+                                        <div className="mt-4">
+                                            <ResponseRatingPanel
+                                                messageId={result.messageId}
+                                                scores={currentSingleScores}
+                                                saving={Boolean(result.messageId && savingRatings[result.messageId])}
+                                                onChange={(field, value) => result.messageId && handleRatingChange(result.messageId, field, value)}
+                                                onSave={() => result.messageId && void handleSaveRating(result.messageId)}
+                                            />
                                         </div>
                                     </>
+                                ) : result?.error ? (
+                                    <div className="mt-4 rounded-[24px] border border-rose-200 bg-rose-50 px-5 py-8 text-sm text-rose-700">
+                                        {result.error}
+                                    </div>
                                 ) : (
                                     <div className="mt-4 rounded-[24px] border border-dashed border-slate-300 bg-white/60 px-5 py-8 text-sm text-slate-600">
                                         Send a prompt to see the active session response here.
@@ -1078,11 +1645,12 @@ export default function ChatForm({ history, configuredProviders }: ChatFormProps
                                 )}
                             </>
                         )}
+                        </div>
                     </div>
-                </div>
-            </section>
+                </section>
 
-            <section className="glass-panel rounded-[30px] p-6 sm:p-7">
+                <section className="flex min-h-0 flex-col overflow-hidden rounded-[32px] bg-[rgba(255,251,245,0.76)] shadow-[0_20px_60px_rgba(20,33,61,0.08)] ring-1 ring-slate-200/70 backdrop-blur-[14px]">
+                    <div className="min-h-0 flex-1 overflow-y-auto p-5 pr-4 [scrollbar-gutter:stable]">
                 <div className="flex flex-wrap items-center justify-between gap-3">
                     <div>
                         <p className="eyebrow">Conversation log</p>
@@ -1122,7 +1690,7 @@ export default function ChatForm({ history, configuredProviders }: ChatFormProps
                     </div>
                 ) : null}
 
-                <div className="mt-4 max-h-[42rem] space-y-4 overflow-y-auto pr-1 [scrollbar-gutter:stable]">
+                <div className="mt-4 space-y-4">
                     {visibleGroups.length ? (
                         visibleGroups.map((group, index) => {
                             const absoluteIndex = conversationGroups.length - visibleGroups.length + index;
@@ -1142,10 +1710,40 @@ export default function ChatForm({ history, configuredProviders }: ChatFormProps
                         </div>
                     )}
                 </div>
-            </section>
+                    </div>
+                </section>
+            </div>
         </section>
     );
 }
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
