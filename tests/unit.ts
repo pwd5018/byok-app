@@ -17,6 +17,11 @@ import {
     normalizePromptVersionName,
     sanitizePromptVersionType,
 } from "../src/lib/promptVersions.ts";
+import {
+    buildControlsPayload,
+    buildConversationGroups,
+    toOptionalNumber,
+} from "../src/components/chat/chat-form/utils.ts";
 
 function testResponseDiffs() {
     assert.deepEqual(buildTextDiff("alpha\nbeta", "alpha\ngamma"), [
@@ -119,7 +124,7 @@ function testResponseRatings() {
     assert.equal(summary[2].averages.correctness, 4);
     assert.equal(summary[2].averages.usefulness, 3);
     assert.equal(summary[2].overallAverage, 3.5);
-  }
+}
 
 function testPromptVersions() {
     assert.equal(isPromptVersionType("system"), true);
@@ -185,13 +190,55 @@ function testGenerationControls() {
     );
 }
 
+function testChatFormUtils() {
+    assert.equal(toOptionalNumber(""), undefined);
+    assert.equal(toOptionalNumber(" 42 "), 42);
+    assert.equal(toOptionalNumber("abc"), undefined);
+
+    assert.deepEqual(
+        buildControlsPayload({
+            temperature: "0.7",
+            top_p: "",
+            max_tokens: "1024",
+            frequency_penalty: "0",
+            presence_penalty: "",
+            seed: "7",
+            reasoning_effort: "medium",
+            verbosity: "",
+        }),
+        {
+            temperature: 0.7,
+            top_p: undefined,
+            max_tokens: 1024,
+            frequency_penalty: 0,
+            presence_penalty: undefined,
+            seed: 7,
+            reasoning_effort: "medium",
+            verbosity: undefined,
+        }
+    );
+
+    const groups = buildConversationGroups([
+        { id: "1", role: "user", content: "u1", provider: null, model: null, runMode: null, memoryMode: null, comparisonGroupId: null, latencyMs: null, promptTokens: null, completionTokens: null, totalTokens: null, toolCalls: null, createdAt: "2026-03-15T00:00:00Z" },
+        { id: "2", role: "assistant", content: "a1", provider: null, model: null, runMode: null, memoryMode: null, comparisonGroupId: null, latencyMs: null, promptTokens: null, completionTokens: null, totalTokens: null, toolCalls: null, createdAt: "2026-03-15T00:00:01Z" },
+        { id: "3", role: "assistant", content: "a2", provider: null, model: null, runMode: null, memoryMode: null, comparisonGroupId: null, latencyMs: null, promptTokens: null, completionTokens: null, totalTokens: null, toolCalls: null, createdAt: "2026-03-15T00:00:02Z" },
+        { id: "4", role: "user", content: "u2", provider: null, model: null, runMode: null, memoryMode: null, comparisonGroupId: null, latencyMs: null, promptTokens: null, completionTokens: null, totalTokens: null, toolCalls: null, createdAt: "2026-03-15T00:00:03Z" },
+    ]);
+
+    assert.equal(groups.length, 2);
+    assert.equal(groups[0].id, "1");
+    assert.equal(groups[0].messages.length, 3);
+    assert.equal(groups[1].id, "4");
+    assert.equal(groups[1].messages[0].content, "u2");
+}
+
 function run() {
     testResponseDiffs();
     testResponseRatings();
     testPromptVersions();
     testGenerationControls();
+    testChatFormUtils();
     console.log("Unit tests passed.");
 }
 
 run();
-
